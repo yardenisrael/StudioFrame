@@ -1,1 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frame Studio - Free Online Animation Tool</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: #0a0a0a;
+      color: #e5e5e5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow-x: hidden;
+    }
+
+    .canvas-container {
+      position: relative;
+      background: #1a1a1a;
+      /* Increased border width and added padding to ensure full border visibility */
+      border: 5px solid #2a2a2a;
+      border-radius: 8px;
+      cursor: crosshair;
+      transition: all 0.2s ease;
+      /* Dynamic aspect ratio based on viewport mode */
+      aspect-ratio: var(--canvas-aspect-ratio, 1);
+      max-width: 100%;
+      box-sizing: border-box;
+      /* Added padding to prevent canvas from overlapping border */
+      padding: 8px;
+      overflow: hidden;
+    }
+
+    .canvas-container canvas {
+      /* Make canvas fill container while maintaining aspect ratio */
+      width: 100%;
+      height: 100%;
+      display: block;
+      /* Added transform origin for zoom functionality */
+      transform-origin: center center;
+      transition: transform 0.1s ease-out;
+    }
+
+    .canvas-container:hover {
+      border-color: #3a3a3a;
+    }
+
+    .canvas-container.active {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 1px #6366f1;
+    }
+
+    .tool-btn {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      color: #a0a0a0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tool-btn:hover {
+      background: #252525;
+      border-color: #3a3a3a;
+      color: #e5e5e5;
+    }
+
+    .tool-btn.active {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: white;
+    }
+
+    .slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: #2a2a2a;
+      outline: none;
+    }
+
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #6366f1;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .slider::-webkit-slider-thumb:hover {
+      background: #7c3aed;
+      transform: scale(1.1);
+    }
+
+    .slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #6366f1;
+      cursor: pointer;
+      border: none;
+    }
+
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 2px solid #2a2a2a;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .color-swatch:hover {
+      border-color: #6366f1;
+      transform: scale(1.05);
+    }
+
+    .frame-number {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #a0a0a0;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .onion-skin {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    input[type="color"] {
+      width: 40px;
+      height: 40px;
+      border: 2px solid #2a2a2a;
+      border-radius: 6px;
+      background: #1a1a1a;
+      cursor: pointer;
+    }
+
+    .panel {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: #2a2a2a;
+    }
+
+    .kbd {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-family: monospace;
+      color: #a0a0a0;
+    }
+
+    .timeline-frame {
+      width: 60px;
+      height: 60px;
+      border: 2px solid #2a2a2a;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .timeline-frame:hover {
+      border-color: #3a3a3a;
+    }
+
+    .timeline-frame.active {
+      border-color: #6366f1;
+    }
+
+    .status-bar {
+      background: #0f0f0f;
+      border-top: 1px solid #2a2a2a;
+      padding: 8px 16px;
+      font-size: 12px;
+      color: #707070;
+    }
+
+    .layer-item {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    .layer-item:hover {
+      background: #252525;
+      border-color: #3a3a3a;
+    }
+
+    .layer-item.active {
+      background: #2a2a3a;
+      border-color: #6366f1;
+    }
+
+    .layer-visibility {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .layer-name {
+      flex: 1;
+      font-size: 12px;
+    }
+
+    .layer-delete {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .layer-item:hover .layer-delete {
+      opacity: 1;
+    }
+
+    /* Improved grid layout for better responsiveness */
+    .canvas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: 768px) {
+      .canvas-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .canvas-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    /* Added styles for viewport toggle button */
+    .viewport-toggle {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 0.5rem;
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 4px;
+    }
+
+    .viewport-btn {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      color: #a0a0a0;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .viewport-btn:hover {
+      background: #252525;
+      border-color: #3a3a3a;
+      color: #e5e5e5;
+    }
+
+    .viewport-btn.active {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="flex flex-col h-screen">
+    <!-- Top Toolbar -->
+    <div class="panel border-b border-[#2a2a2a] rounded-none flex items-center justify-between px-6 py-3 relative">
+      <div class="flex items-center gap-4">
+        <h1 class="text-xl font-bold text-white">Frame Studio</h1>
+        <div class="divider"></div>
+        <span class="text-sm text-gray-500">Free Online Animation Tool</span>
+      </div>
+      
+      /* Added viewport toggle button at center top */
+      <div class="viewport-toggle">
+        <button class="viewport-btn" id="desktop-btn" onclick="setViewport('desktop')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          Desktop
+        </button>
+        <button class="viewport-btn active" id="phone-btn" onclick="setViewport('phone')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+            <line x1="12" y1="18" x2="12.01" y2="18"/>
+          </svg>
+          Phone
+        </button>
+      </div>
+      
+      <div class="flex items-center gap-2">
+        <button class="tool-btn" onclick="exportAnimation()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          Export
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Left Sidebar - Tools -->
+      <div class="w-64 panel border-r border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto">
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Drawing Tools</h3>
+          <div class="flex flex-col gap-2">
+            <button class="tool-btn active" id="brush-btn" onclick="setTool('brush')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/>
+                <path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/>
+              </svg>
+              Brush <span class="kbd ml-auto">B</span>
+            </button>
+            <button class="tool-btn" id="pencil-btn" onclick="setTool('pencil')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+              Pencil <span class="kbd ml-auto">P</span>
+            </button>
+            <button class="tool-btn" id="eraser-btn" onclick="setTool('eraser')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
+                <path d="M22 21H7"/>
+                <path d="m5 11 9 9"/>
+              </svg>
+              Eraser <span class="kbd ml-auto">E</span>
+            </button>
+            <button class="tool-btn" id="fill-btn" onclick="setTool('fill')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m4 13 3.5-3.5a2.8 2.8 0 1 1 4 4L8 17"/>
+                <path d="M13 8 7 2 2 7l6 6"/>
+                <path d="m18 22 4-4-4-4-4 4z"/>
+              </svg>
+              Fill <span class="kbd ml-auto">F</span>
+            </button>
+            <button class="tool-btn" id="lasso-btn" onclick="setTool('lasso')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              Lasso <span class="kbd ml-auto">L</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Color</h3>
+          <div class="flex items-center gap-3 mb-4">
+            <input type="color" id="color-picker" value="#ffffff" onchange="updateColor(this.value)">
+            <div class="flex-1">
+              <div class="text-xs text-gray-400 mb-1">Current</div>
+              <div id="current-color" class="text-sm font-mono">#FFFFFF</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-5 gap-2">
+            <div class="color-swatch" style="background: #ffffff" onclick="selectColor('#ffffff')"></div>
+            <div class="color-swatch" style="background: #000000" onclick="selectColor('#000000')"></div>
+            <div class="color-swatch" style="background: #ff0000" onclick="selectColor('#ff0000')"></div>
+            <div class="color-swatch" style="background: #00ff00" onclick="selectColor('#00ff00')"></div>
+            <div class="color-swatch" style="background: #0000ff" onclick="selectColor('#0000ff')"></div>
+            <div class="color-swatch" style="background: #ffff00" onclick="selectColor('#ffff00')"></div>
+            <div class="color-swatch" style="background: #ff00ff" onclick="selectColor('#ff00ff')"></div>
+            <div class="color-swatch" style="background: #00ffff" onclick="selectColor('#00ffff')"></div>
+            <div class="color-swatch" style="background: #ff8800" onclick="selectColor('#ff8800')"></div>
+            <div class="color-swatch" style="background: #8800ff" onclick="selectColor('#8800ff')"></div>
+            <div class="color-swatch" style="background: #ff6b6b" onclick="selectColor('#ff6b6b')"></div>
+            <div class="color-swatch" style="background: #4ecdc4" onclick="selectColor('#4ecdc4')"></div>
+            <div class="color-swatch" style="background: #45b7d1" onclick="selectColor('#45b7d1')"></div>
+            <div class="color-swatch" style="background: #96ceb4" onclick="selectColor('#96ceb4')"></div>
+            <div class="color-swatch" style="background: #ffeaa7" onclick="selectColor('#ffeaa7')"></div>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Brush Settings</h3>
+          <div class="space-y-4">
+            <div>
+              <div class="flex justify-between text-xs text-gray-400 mb-2">
+                <span>Size</span>
+                <span id="size-value">5</span>
+              </div>
+              <input type="range" class="slider" id="brush-size" min="1" max="50" value="5" oninput="updateBrushSize(this.value)">
+            </div>
+            <div>
+              <div class="flex justify-between text-xs text-gray-400 mb-2">
+                <span>Opacity</span>
+                <span id="opacity-value">100%</span>
+              </div>
+              <input type="range" class="slider" id="brush-opacity" min="0" max="100" value="100" oninput="updateOpacity(this.value)">
+            </div>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <!-- Removed auto-advance behavior from onion skinning -->
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Onion Skinning</h3>
+          <label class="flex items-center gap-2 cursor-pointer mb-3">
+            <input type="checkbox" id="onion-skin-prev" onchange="toggleOnionSkin()" class="w-4 h-4">
+            <span class="text-sm">Show Previous Frame</span>
+          </label>
+          <div id="onion-controls" style="display: none;">
+            <div class="flex justify-between text-xs text-gray-400 mb-2">
+              <span>Onion Opacity</span>
+              <span id="onion-opacity-value">30%</span>
+            </div>
+            <input type="range" class="slider" id="onion-opacity" min="5" max="80" value="30" oninput="updateOnionOpacity(this.value)">
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Frame Actions</h3>
+          <div class="flex flex-col gap-2">
+            <button class="tool-btn" onclick="clearCurrentFrame()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Clear Frame
+            </button>
+            <button class="tool-btn" onclick="duplicateFrame()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              Duplicate Frame
+            </button>
+            <button class="tool-btn" onclick="clearAllFrames()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/>
+              </svg>
+              Clear All Frames
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center - Canvas Area -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Canvas Grid -->
+        <div class="flex-1 overflow-auto p-6">
+          <!-- Improved responsive grid layout -->
+          <div class="canvas-grid">
+            <div class="canvas-container active" id="frame-container-0">
+              <div class="frame-number" id="frame-label-0">Frame 1 - Layer 1</div>
+              <canvas id="canvas-0" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-0" width="300" height="300"></canvas>
+            </div>
+            <div class="canvas-container" id="frame-container-1">
+              <div class="frame-number" id="frame-label-1">Frame 2 - Layer 1</div>
+              <canvas id="canvas-1" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-1" width="300" height="300"></canvas>
+            </div>
+            <div class="canvas-container" id="frame-container-2">
+              <div class="frame-number" id="frame-label-2">Frame 3 - Layer 1</div>
+              <canvas id="canvas-2" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-2" width="300" height="300"></canvas>
+            </div>
+            <div class="canvas-container" id="frame-container-3">
+              <div class="frame-number" id="frame-label-3">Frame 4 - Layer 1</div>
+              <canvas id="canvas-3" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-3" width="300" height="300"></canvas>
+            </div>
+            <div class="canvas-container" id="frame-container-4">
+              <div class="frame-number" id="frame-label-4">Frame 5 - Layer 1</div>
+              <canvas id="canvas-4" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-4" width="300" height="300"></canvas>
+            </div>
+            <div class="canvas-container" id="frame-container-5">
+              <div class="frame-number" id="frame-label-5">Frame 6 - Layer 1</div>
+              <canvas id="canvas-5" width="300" height="300"></canvas>
+              <canvas class="onion-skin" id="onion-5" width="300" height="300"></canvas>
+            </div>
+          </div>
+
+          <!-- Animation Preview -->
+          <div class="mt-8 max-w-6xl mx-auto">
+            <div class="panel">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold text-white">Animation Preview</h3>
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">FPS:</span>
+                    <input type="number" id="fps-input" value="12" min="1" max="60" class="w-16 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-sm" onchange="updateFPS(this.value)">
+                  </div>
+                  <button class="tool-btn" id="play-btn" onclick="toggleAnimation()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Play
+                  </button>
+                </div>
+              </div>
+              <div class="flex justify-center">
+                <div class="canvas-container" style="max-width: 300px;">
+                  <canvas id="preview-canvas" width="300" height="300"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="panel border-t border-[#2a2a2a] rounded-none">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Timeline</h3>
+            <div class="flex items-center gap-2">
+              <button class="tool-btn text-xs py-1" onclick="previousFrame()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="15 18 9 12 15 6"/>
+                </svg>
+              </button>
+              <button class="tool-btn text-xs py-1" onclick="nextFrame()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="9 18 15 12 9 6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="flex gap-2 overflow-x-auto pb-2">
+            <div class="timeline-frame active" id="timeline-0" onclick="selectFrame(0)">
+              <canvas width="60" height="60" id="thumb-0"></canvas>
+            </div>
+            <div class="timeline-frame" id="timeline-1" onclick="selectFrame(1)">
+              <canvas width="60" height="60" id="thumb-1"></canvas>
+            </div>
+            <div class="timeline-frame" id="timeline-2" onclick="selectFrame(2)">
+              <canvas width="60" height="60" id="thumb-2"></canvas>
+            </div>
+            <div class="timeline-frame" id="timeline-3" onclick="selectFrame(3)">
+              <canvas width="60" height="60" id="thumb-3"></canvas>
+            </div>
+            <div class="timeline-frame" id="timeline-4" onclick="selectFrame(4)">
+              <canvas width="60" height="60" id="thumb-4"></canvas>
+            </div>
+            <div class="timeline-frame" id="timeline-5" onclick="selectFrame(5)">
+              <canvas width="60" height="60" id="thumb-5"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Sidebar - History & Info -->
+      <div class="w-64 panel border-l border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Layers</h3>
+            <button class="tool-btn text-xs py-1 px-2" onclick="addLayer()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+          </div>
+          <div class="text-xs text-gray-400 mb-3 p-2 bg-[#1a1a1a] rounded border border-[#2a2a2a]">
+            💡 Each layer animates independently. Draw different animations on different layers to create complex scenes!
+          </div>
+          <div id="layers-list" class="space-y-2 mb-3">
+            <!-- Layers will be dynamically added here -->
+          </div>
+          <div class="flex gap-2">
+            <button class="tool-btn flex-1 text-xs" onclick="previewCurrentLayer()" title="Preview only this layer's animation">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Preview Layer
+            </button>
+            <button class="tool-btn flex-1 text-xs" onclick="duplicateLayerToAllFrames()" title="Copy this layer to all frames">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              Copy to All
+            </button>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">History</h3>
+          <div class="flex gap-2">
+            <button class="tool-btn flex-1" onclick="undo()" id="undo-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 7v6h6"/>
+                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+              </svg>
+              Undo
+            </button>
+            <button class="tool-btn flex-1" onclick="redo()" id="redo-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 7v6h-6"/>
+                <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/>
+              </svg>
+              Redo
+            </button>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">
+            <div class="kbd inline">Ctrl+Z</div> / <div class="kbd inline">Ctrl+Y</div>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Keyboard Shortcuts</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span class="text-gray-400">Brush</span>
+              <span class="kbd">B</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Pencil</span>
+              <span class="kbd">P</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Eraser</span>
+              <span class="kbd">E</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Fill</span>
+              <span class="kbd">F</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Lasso</span>
+              <span class="kbd">L</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Next Frame</span>
+              <span class="kbd">→</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Prev Frame</span>
+              <span class="kbd">←</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Play/Pause</span>
+              <span class="kbd">Space</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-px bg-[#2a2a2a]"></div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Canvas Info</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span class="text-gray-400">Dimensions</span>
+              <span class="text-white">300 × 300</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Total Frames</span>
+              <span class="text-white">6</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Current Frame</span>
+              <span class="text-white" id="current-frame-info">1</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <span id="status-text">Ready</span>
+      </div>
+      <div>Frame Studio v1.0</div>
+    </div>
+  </div>
+
+  <script>
+    const canvases = [];
+    const contexts = [];
+    const onionCanvases = [];
+    const onionContexts = [];
+    const thumbCanvases = [];
+    const thumbContexts = [];
+    const history = [];
+    const redoStack = [];
+    
+    const frameLayers = Array(6).fill(null).map(() => []);
+    let currentLayer = 0;
+    
+    let currentFrame = 0;
+    let currentTool = 'brush';
+    let currentColor = '#ffffff';
+    let brushSize = 5;
+    let brushOpacity = 1;
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let animationInterval = null;
+    let animationFrame = 0;
+    let fps = 12;
+    let onionSkinEnabled = false;
+    let onionOpacity = 0.3;
+    let lassoPoints = [];
+    let isLassoActive = false;
+    let isPreviewingLayer = false;
+    let previewLayerIndex = -1;
+    /* Changed initial viewport to phone */
+    let currentViewport = 'phone';
+    /* Added zoom levels array for each frame */
+    const zoomLevels = [1, 1, 1, 1, 1, 1];
+
+    const layerColors = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#84cc16'];
+
+    for (let i = 0; i < 6; i++) {
+      const layerCanvas = document.createElement('canvas');
+      /* Reduced initial canvas size to phone dimensions (smaller) */
+      layerCanvas.width = 240;
+      layerCanvas.height = 427;
+      const layerCtx = layerCanvas.getContext('2d', { willReadFrequently: true });
+      frameLayers[i].push({
+        canvas: layerCanvas,
+        ctx: layerCtx,
+        visible: true,
+        name: 'Layer 1',
+        opacity: 1,
+        color: layerColors[0]
+      });
+    }
+
+    // Initialize canvases
+    for (let i = 0; i < 6; i++) {
+      const canvas = document.getElementById(`canvas-${i}`);
+      /* Reduced initial canvas dimensions to smaller phone size */
+      canvas.width = 240;
+      canvas.height = 427;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      canvases.push(canvas);
+      contexts.push(ctx);
+
+      const onionCanvas = document.getElementById(`onion-${i}`);
+      /* Reduced initial onion canvas dimensions to smaller phone size */
+      onionCanvas.width = 240;
+      onionCanvas.height = 427;
+      const onionCtx = onionCanvas.getContext('2d');
+      onionCanvases.push(onionCanvas);
+      onionContexts.push(onionCtx);
+
+      const thumbCanvas = document.getElementById(`thumb-${i}`);
+      const thumbCtx = thumbCanvas.getContext('2d');
+      thumbCtx.fillStyle = '#1a1a1a';
+      thumbCtx.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height);
+      thumbCanvases.push(thumbCanvas);
+      thumbContexts.push(thumbCtx);
+
+      canvas.addEventListener('mousedown', (e) => {
+        const frameIndex = canvases.indexOf(e.target);
+        if (frameIndex !== currentFrame) {
+          selectFrame(frameIndex);
+        }
+        startDrawing(e);
+      });
+      canvas.addEventListener('mousemove', draw);
+      canvas.addEventListener('mouseup', stopDrawing);
+      canvas.addEventListener('mouseleave', stopDrawing);
+      
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+          clientX: touch.clientX,
+          clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+      });
+      
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+          clientX: touch.clientX,
+          clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+      });
+      
+      canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        const mouseEvent = new MouseEvent('mouseup', {});
+        canvas.dispatchEvent(mouseEvent);
+      });
+      
+      /* Added wheel event listener for zoom functionality */
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const frameIndex = canvases.indexOf(e.target);
+        handleZoom(e, frameIndex);
+      });
+    }
+
+    // Preview canvas
+    const previewCanvas = document.getElementById('preview-canvas');
+    /* Reduced initial preview canvas dimensions to smaller phone size */
+    previewCanvas.width = 240;
+    previewCanvas.height = 427;
+    const previewCtx = previewCanvas.getContext('2d');
+    previewCtx.fillStyle = '#1a1a1a';
+    previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+    /* Added zoom handler function */
+    function handleZoom(e, frameIndex) {
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      zoomLevels[frameIndex] = Math.max(0.5, Math.min(3, zoomLevels[frameIndex] + delta));
+      
+      const canvas = canvases[frameIndex];
+      const onionCanvas = onionCanvases[frameIndex];
+      
+      canvas.style.transform = `scale(${zoomLevels[frameIndex]})`;
+      onionCanvas.style.transform = `scale(${zoomLevels[frameIndex]})`;
+    }
+
+    /* Added viewport switching function */
+    function setViewport(mode) {
+      currentViewport = mode;
+      const containers = document.querySelectorAll('.canvas-container');
+      
+      document.getElementById('desktop-btn').classList.toggle('active', mode === 'desktop');
+      document.getElementById('phone-btn').classList.toggle('active', mode === 'phone');
+      
+      if (mode === 'desktop') {
+        // Desktop: 16:9 aspect ratio
+        containers.forEach(container => {
+          container.style.setProperty('--canvas-aspect-ratio', '16 / 9');
+        });
+        
+        /* Reduced desktop canvas dimensions */
+        // Update canvas dimensions
+        canvases.forEach((canvas, i) => {
+          canvas.width = 427;
+          canvas.height = 240;
+          onionCanvases[i].width = 427;
+          onionCanvases[i].height = 240;
+        });
+        
+        // Update layer canvases
+        frameLayers.forEach(layers => {
+          layers.forEach(layer => {
+            const oldCanvas = layer.canvas;
+            const newCanvas = document.createElement('canvas');
+            newCanvas.width = 427;
+            newCanvas.height = 240;
+            const newCtx = newCanvas.getContext('2d', { willReadFrequently: true });
+            newCtx.drawImage(oldCanvas, 0, 0, oldCanvas.width, oldCanvas.height, 0, 0, 427, 240);
+            layer.canvas = newCanvas;
+            layer.ctx = newCtx;
+          });
+        });
+        
+        previewCanvas.width = 427;
+        previewCanvas.height = 240;
+      } else {
+        // Phone: 9:16 aspect ratio
+        containers.forEach(container => {
+          container.style.setProperty('--canvas-aspect-ratio', '9 / 16');
+        });
+        
+        /* Reduced phone canvas dimensions */
+        // Update canvas dimensions
+        canvases.forEach((canvas, i) => {
+          canvas.width = 240;
+          canvas.height = 427;
+          onionCanvases[i].width = 240;
+          onionCanvases[i].height = 427;
+        });
+        
+        // Update layer canvases
+        frameLayers.forEach(layers => {
+          layers.forEach(layer => {
+            const oldCanvas = layer.canvas;
+            const newCanvas = document.createElement('canvas');
+            newCanvas.width = 240;
+            newCanvas.height = 427;
+            const newCtx = newCanvas.getContext('2d', { willReadFrequently: true });
+            newCtx.drawImage(oldCanvas, 0, 0, oldCanvas.width, oldCanvas.height, 0, 0, 240, 427);
+            layer.canvas = newCanvas;
+            layer.ctx = newCtx;
+          });
+        });
+        
+        previewCanvas.width = 240;
+        previewCanvas.height = 427;
+      }
+      
+      // Redraw all frames
+      for (let i = 0; i < 6; i++) {
+        composeLayers(i);
+        updateThumbnail(i);
+      }
+      
+      updateOnionSkin();
+    }
+
+    function saveState() {
+      const state = frameLayers.map(layers => layers.map(layer => layer.canvas.toDataURL()));
+      history.push(state);
+      if (history.length > 50) history.shift();
+      redoStack.length = 0;
+      updateHistoryButtons();
+    }
+
+    function undo() {
+      if (history.length > 1) {
+        redoStack.push(history.pop());
+        const state = history[history.length - 1];
+        restoreState(state);
+        updateHistoryButtons();
+      }
+    }
+
+    function redo() {
+      if (redoStack.length > 0) {
+        const state = redoStack.pop();
+        history.push(state);
+        restoreState(state);
+        updateHistoryButtons();
+      }
+    }
+
+    function restoreState(state) {
+      state.forEach((layersDataURL, frameIndex) => {
+        layersDataURL.forEach((dataURL, layerIndex) => {
+          const img = new Image();
+          img.onload = () => {
+            const layer = frameLayers[frameIndex][layerIndex];
+            layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+            layer.ctx.drawImage(img, 0, 0);
+            if (frameIndex === currentFrame) {
+              composeLayers();
+              updateThumbnail(frameIndex);
+            }
+          };
+          img.src = dataURL;
+        });
+      });
+      updateOnionSkin();
+    }
+
+    function updateHistoryButtons() {
+      document.getElementById('undo-btn').disabled = history.length <= 1;
+      document.getElementById('redo-btn').disabled = redoStack.length === 0;
+    }
+
+    function selectFrame(index) {
+      currentFrame = index;
+      document.querySelectorAll('.canvas-container').forEach((el, i) => {
+        el.classList.toggle('active', i === index);
+      });
+      document.querySelectorAll('.timeline-frame').forEach((el, i) => {
+        el.classList.toggle('active', i === index);
+      });
+      document.getElementById('current-frame-info').textContent = index + 1;
+      updateLayersList();
+      updateOnionSkin();
+      updateFrameLabel();
+    }
+
+    function setTool(tool) {
+      currentTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById(`${tool}-btn`).classList.add('active');
+      document.getElementById('status-text').textContent = `Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)}`;
+    }
+
+    function updateColor(color) {
+      currentColor = color;
+      document.getElementById('current-color').textContent = color.toUpperCase();
+    }
+
+    function selectColor(color) {
+      currentColor = color;
+      document.getElementById('color-picker').value = color;
+      document.getElementById('current-color').textContent = color.toUpperCase();
+    }
+
+    function updateBrushSize(size) {
+      brushSize = parseInt(size);
+      document.getElementById('size-value').textContent = size;
+    }
+
+    function updateOpacity(opacity) {
+      brushOpacity = opacity / 100;
+      document.getElementById('opacity-value').textContent = opacity + '%';
+    }
+
+    function updateOnionOpacity(opacity) {
+      onionOpacity = opacity / 100;
+      document.getElementById('onion-opacity-value').textContent = opacity + '%';
+      updateOnionSkin();
+    }
+
+    function updateFPS(newFps) {
+      fps = parseInt(newFps);
+      if (animationInterval) {
+        clearInterval(animationInterval);
+        animationInterval = setInterval(updateAnimation, 1000 / fps);
+      }
+    }
+
+    function getCanvasCoordinates(canvas, clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      // Calculate the scale factor between displayed size and actual canvas size
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      
+      // Get position relative to canvas and scale to actual canvas coordinates
+      const x = (clientX - rect.left) * scaleX;
+      const y = (clientY - rect.top) * scaleY;
+      
+      return { x, y };
+    }
+
+    function startDrawing(e) {
+      const canvas = e.target;
+      const frameIndex = canvases.indexOf(canvas);
+      if (frameIndex !== currentFrame) return;
+
+      isDrawing = true;
+      const coords = getCanvasCoordinates(canvas, e.clientX, e.clientY);
+      lastX = coords.x;
+      lastY = coords.y;
+
+      if (currentTool === 'lasso') {
+        lassoPoints = [[lastX, lastY]];
+        isLassoActive = true;
+      } else if (currentTool === 'fill') {
+        floodFill(lastX, lastY);
+        composeLayers();
+        updateThumbnail(currentFrame);
+      } else {
+        saveState();
+      }
+    }
+
+    function draw(e) {
+      if (!isDrawing) return;
+
+      const layer = frameLayers[currentFrame][currentLayer];
+      const ctx = layer.ctx;
+      const canvas = canvases[currentFrame];
+      const coords = getCanvasCoordinates(canvas, e.clientX, e.clientY);
+      const x = coords.x;
+      const y = coords.y;
+
+      if (currentTool === 'lasso') {
+        lassoPoints.push([x, y]);
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (currentTool === 'brush' || currentTool === 'pencil') {
+        ctx.globalAlpha = brushOpacity;
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = currentTool === 'pencil' ? Math.max(1, brushSize / 2) : brushSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (currentTool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = brushSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      lastX = x;
+      lastY = y;
+      
+      composeLayers();
+    }
+
+    function stopDrawing() {
+      if (!isDrawing) return;
+      isDrawing = false;
+
+      if (currentTool === 'lasso' && isLassoActive) {
+        eraseLassoSelection();
+        isLassoActive = false;
+        lassoPoints = [];
+      }
+
+      composeLayers();
+      updateThumbnail(currentFrame);
+      
+      /* Automatically show onion skin on next frame after drawing */
+      if (onionSkinEnabled && currentFrame < 5) {
+        updateOnionSkin();
+      }
+    }
+
+    function composeLayers(frameIndex) {
+      /* Made composeLayers accept optional frameIndex parameter */
+      const idx = frameIndex !== undefined ? frameIndex : currentFrame;
+      const ctx = contexts[idx];
+      const canvas = canvases[idx];
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      frameLayers[idx].forEach(layer => {
+        if (layer.visible) {
+          ctx.save();
+          ctx.globalAlpha = layer.opacity;
+          ctx.drawImage(layer.canvas, 0, 0);
+          ctx.restore();
+        }
+      });
+      
+      if (frameIndex === undefined) {
+        updateThumbnail(idx);
+      }
+    }
+
+    function eraseLassoSelection() {
+      const layer = frameLayers[currentFrame][currentLayer];
+      const ctx = layer.ctx;
+      const canvas = layer.canvas;
+      
+      if (lassoPoints.length < 3) return;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(lassoPoints[0][0], lassoPoints[0][1]);
+      for (let i = 1; i < lassoPoints.length; i++) {
+        ctx.lineTo(lassoPoints[i][0], lassoPoints[i][1]);
+      }
+      ctx.closePath();
+      ctx.clip();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    function floodFill(startX, startY) {
+      const layer = frameLayers[currentFrame][currentLayer];
+      const ctx = layer.ctx;
+      const canvas = layer.canvas;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = imageData.data;
+      
+      startX = Math.floor(startX);
+      startY = Math.floor(startY);
+      
+      const startPos = (startY * canvas.width + startX) * 4;
+      const startR = pixels[startPos];
+      const startG = pixels[startPos + 1];
+      const startB = pixels[startPos + 2];
+      const startA = pixels[startPos + 3];
+
+      const fillColor = hexToRgb(currentColor);
+      
+      if (startR === fillColor.r && startG === fillColor.g && startB === fillColor.b) return;
+
+      const stack = [[startX, startY]];
+      const visited = new Set();
+
+      while (stack.length > 0) {
+        const [x, y] = stack.pop();
+        const key = `${x},${y}`;
+        
+        if (visited.has(key)) continue;
+        if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) continue;
+        
+        const pos = (y * canvas.width + x) * 4;
+        const r = pixels[pos];
+        const g = pixels[pos + 1];
+        const b = pixels[pos + 2];
+        const a = pixels[pos + 3];
+
+        if (r !== startR || g !== startG || b !== startB || a !== startA) continue;
+
+        visited.add(key);
+        pixels[pos] = fillColor.r;
+        pixels[pos + 1] = fillColor.g;
+        pixels[pos + 2] = fillColor.b;
+        pixels[pos + 3] = 255;
+
+        stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      saveState();
+    }
+
+    function hexToRgb(hex) {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 255, g: 255, b: 255 };
+    }
+
+    function updateThumbnail(index) {
+      const thumbCtx = thumbContexts[index];
+      thumbCtx.clearRect(0, 0, 60, 60);
+      thumbCtx.fillStyle = '#1a1a1a';
+      thumbCtx.fillRect(0, 0, 60, 60);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 300;
+      tempCanvas.height = 300;
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      frameLayers[index].forEach(layer => {
+        if (layer.visible) {
+          tempCtx.save();
+          tempCtx.globalAlpha = layer.opacity;
+          tempCtx.drawImage(layer.canvas, 0, 0);
+          tempCtx.restore();
+        }
+      });
+      thumbCtx.drawImage(tempCanvas, 0, 0, 300, 300, 0, 0, 60, 60);
+    }
+
+    function clearCurrentFrame() {
+      saveState();
+      const layer = frameLayers[currentFrame][currentLayer];
+      layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+      composeLayers();
+      updateThumbnail(currentFrame);
+      updateOnionSkin();
+    }
+
+    function duplicateFrame() {
+      if (currentFrame < 5) {
+        saveState();
+        const nextFrame = currentFrame + 1;
+        
+        frameLayers[nextFrame] = frameLayers[currentFrame].map(layer => {
+          const newCanvas = document.createElement('canvas');
+          newCanvas.width = layer.canvas.width; // Use current canvas dimensions
+          newCanvas.height = layer.canvas.height; // Use current canvas dimensions
+          const newCtx = newCanvas.getContext('2d', { willReadFrequently: true });
+          newCtx.drawImage(layer.canvas, 0, 0);
+          
+          return {
+            canvas: newCanvas,
+            ctx: newCtx,
+            visible: layer.visible,
+            name: layer.name,
+            opacity: layer.opacity,
+            color: layer.color
+          };
+        });
+        
+        composeLayers();
+        updateThumbnail(nextFrame);
+        selectFrame(nextFrame);
+      }
+    }
+
+    function clearAllFrames() {
+      if (confirm('Clear all frames? This cannot be undone.')) {
+        saveState();
+        frameLayers.forEach((layers, frameIndex) => {
+          layers.forEach(layer => {
+            layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+          });
+          composeLayers(frameIndex);
+          updateThumbnail(frameIndex);
+        });
+        updateOnionSkin();
+      }
+    }
+
+    function toggleOnionSkin() {
+      onionSkinEnabled = document.getElementById('onion-skin-prev').checked;
+      const controls = document.getElementById('onion-controls');
+      controls.style.display = onionSkinEnabled ? 'block' : 'none';
+      updateOnionSkin();
+    }
+
+    function updateOnionSkin() {
+      onionContexts.forEach((ctx, i) => {
+        ctx.clearRect(0, 0, onionCanvases[i].width, onionCanvases[i].height);
+      });
+
+      /* Show onion skin on next frame automatically */
+      if (onionSkinEnabled) {
+        for (let i = 1; i < 6; i++) {
+          const prevFrameIndex = i - 1;
+          const onionCtx = onionContexts[i];
+          
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvases[i].width;
+          tempCanvas.height = canvases[i].height;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.fillStyle = '#1a1a1a';
+          tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+          frameLayers[prevFrameIndex].forEach(layer => {
+            if (layer.visible) {
+              tempCtx.save();
+              tempCtx.globalAlpha = layer.opacity;
+              tempCtx.drawImage(layer.canvas, 0, 0);
+              tempCtx.restore();
+            }
+          });
+          
+          const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+          const pixels = imageData.data;
+          
+          const bgColor = hexToRgb('#1a1a1a');
+          for (let j = 0; j < pixels.length; j += 4) {
+            const r = pixels[j];
+            const g = pixels[j + 1];
+            const b = pixels[j + 2];
+            const a = pixels[j + 3];
+            
+            const isBg = Math.abs(r - bgColor.r) < 10 && 
+                         Math.abs(g - bgColor.g) < 10 && 
+                         Math.abs(b - bgColor.b) < 10;
+            
+            if (!isBg && a > 0) {
+              pixels[j] = Math.min(255, r * 0.7 + 255 * 0.3);
+              pixels[j + 1] = Math.min(255, g * 0.7 + 105 * 0.3);
+              pixels[j + 2] = Math.min(255, b * 0.7 + 180 * 0.3);
+              pixels[j + 3] = a * onionOpacity;
+            } else {
+              pixels[j + 3] = 0;
+            }
+          }
+          
+          tempCtx.putImageData(imageData, 0, 0);
+          onionCtx.drawImage(tempCanvas, 0, 0);
+        }
+      }
+    }
+
+    function previousFrame() {
+      if (currentFrame > 0) {
+        selectFrame(currentFrame - 1);
+      }
+    }
+
+    function nextFrame() {
+      if (currentFrame < 5) {
+        selectFrame(currentFrame + 1);
+      }
+    }
+
+    function previewCurrentLayer() {
+      if (animationInterval) {
+        clearInterval(animationInterval);
+        animationInterval = null;
+        isPreviewingLayer = false;
+        previewLayerIndex = -1;
+        document.getElementById('play-btn').innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Play
+        `;
+        return;
+      }
+
+      isPreviewingLayer = true;
+      previewLayerIndex = currentLayer;
+      animationFrame = 0;
+      
+      animationInterval = setInterval(() => {
+        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        previewCtx.fillStyle = '#1a1a1a';
+        previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+        
+        const layer = frameLayers[animationFrame][previewLayerIndex];
+        if (layer && layer.visible) {
+          previewCtx.save();
+          previewCtx.globalAlpha = layer.opacity;
+          previewCtx.drawImage(layer.canvas, 0, 0);
+          previewCtx.restore();
+        }
+
+        animationFrame = (animationFrame + 1) % 6;
+      }, 1000 / fps);
+      
+      document.getElementById('play-btn').innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="4" width="4" height="16"/>
+          <rect x="14" y="4" width="4" height="16"/>
+        </svg>
+        Pause
+      `;
+    }
+
+    function duplicateLayerToAllFrames() {
+      if (!confirm('Copy the current layer from this frame to all other frames? This will overwrite existing content on this layer in other frames.')) {
+        return;
+      }
+      
+      saveState();
+      const sourceLayer = frameLayers[currentFrame][currentLayer];
+      
+      for (let frameIndex = 0; frameIndex < 6; frameIndex++) {
+        if (frameIndex === currentFrame) continue;
+        
+        while (frameLayers[frameIndex].length <= currentLayer) {
+          const layerCanvas = document.createElement('canvas');
+          layerCanvas.width = canvases[frameIndex].width;
+          layerCanvas.height = canvases[frameIndex].height;
+          const layerCtx = layerCanvas.getContext('2d', { willReadFrequently: true });
+          
+          const layerIndex = frameLayers[frameIndex].length;
+          frameLayers[frameIndex].push({
+            canvas: layerCanvas,
+            ctx: layerCtx,
+            visible: true,
+            name: `Layer ${layerIndex + 1}`,
+            opacity: 1,
+            color: layerColors[layerIndex % layerColors.length]
+          });
+        }
+        
+        const targetLayer = frameLayers[frameIndex][currentLayer];
+        targetLayer.ctx.clearRect(0, 0, targetLayer.canvas.width, targetLayer.canvas.height);
+        targetLayer.ctx.drawImage(sourceLayer.canvas, 0, 0);
+        targetLayer.visible = sourceLayer.visible;
+        targetLayer.opacity = sourceLayer.opacity;
+        
+        composeLayers(frameIndex);
+        updateThumbnail(frameIndex);
+      }
+      
+      alert('Layer copied to all frames! Now you can add another animation on a new layer.');
+    }
+
+    function toggleAnimation() {
+      if (animationInterval) {
+        clearInterval(animationInterval);
+        animationInterval = null;
+        isPreviewingLayer = false;
+        previewLayerIndex = -1;
+        document.getElementById('play-btn').innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Play
+        `;
+      } else {
+        isPreviewingLayer = false;
+        previewLayerIndex = -1;
+        animationFrame = 0;
+        animationInterval = setInterval(updateAnimation, 1000 / fps);
+        document.getElementById('play-btn').innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16"/>
+            <rect x="14" y="4" width="4" height="16"/>
+          </svg>
+          Pause
+        `;
+      }
+    }
+
+    function updateAnimation() {
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewCtx.fillStyle = '#1a1a1a';
+      previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+      
+      frameLayers[animationFrame].forEach(layer => {
+        if (layer.visible) {
+          previewCtx.save();
+          previewCtx.globalAlpha = layer.opacity;
+          previewCtx.drawImage(layer.canvas, 0, 0);
+          previewCtx.restore();
+        }
+      });
+
+      animationFrame = (animationFrame + 1) % 6;
+    }
+
+    function exportAnimation() {
+      const link = document.createElement('a');
+      link.download = `frame-${currentFrame + 1}.png`;
+      link.href = canvases[currentFrame].toDataURL();
+      link.click();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          undo();
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          redo();
+        }
+      } else {
+        switch(e.key.toLowerCase()) {
+          case 'b': setTool('brush'); break;
+          case 'p': setTool('pencil'); break;
+          case 'e': setTool('eraser'); break;
+          case 'f': setTool('fill'); break;
+          case 'l': setTool('lasso'); break;
+          case 'arrowright': nextFrame(); break;
+          case 'arrowleft': previousFrame(); break;
+          case ' ': e.preventDefault(); toggleAnimation(); break;
+        }
+      }
+    });
+
+    function addLayer() {
+      saveState();
+      
+      const layerIndex = frameLayers[0].length;
+      
+      for (let frameIndex = 0; frameIndex < 6; frameIndex++) {
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = canvases[0].width;
+        layerCanvas.height = canvases[0].height;
+        const layerCtx = layerCanvas.getContext('2d', { willReadFrequently: true });
+        
+        const newLayer = {
+          canvas: layerCanvas,
+          ctx: layerCtx,
+          visible: true,
+          name: `Layer ${layerIndex + 1}`,
+          opacity: 1,
+          color: layerColors[layerIndex % layerColors.length]
+        };
+        
+        frameLayers[frameIndex].push(newLayer);
+        
+        composeLayers(frameIndex);
+        updateThumbnail(frameIndex);
+      }
+      
+      currentLayer = frameLayers[currentFrame].length - 1;
+      updateLayersList();
+      updateFrameLabel();
+      
+      for (let i = 0; i < 6; i++) {
+        const layer = frameLayers[i][currentLayer];
+        const label = document.getElementById(`frame-label-${i}`);
+        if (label) {
+          label.textContent = `Frame ${i + 1} - ${layer.name}`;
+          label.style.color = layer.color;
+        }
+      }
+    }
+
+    function deleteLayer(index) {
+      if (frameLayers[currentFrame].length <= 1) {
+        alert('Cannot delete the last layer');
+        return;
+      }
+      
+      frameLayers[currentFrame].splice(index, 1);
+      if (currentLayer >= frameLayers[currentFrame].length) {
+        currentLayer = frameLayers[currentFrame].length - 1;
+      }
+      updateLayersList();
+      updateFrameLabel();
+      composeLayers();
+    }
+
+    function toggleLayerVisibility(index) {
+      frameLayers[currentFrame][index].visible = !frameLayers[currentFrame][index].visible;
+      updateLayersList();
+      composeLayers();
+    }
+
+    function selectLayer(index) {
+      currentLayer = index;
+      updateLayersList();
+      updateFrameLabel();
+    }
+
+    function updateFrameLabel() {
+      const layer = frameLayers[currentFrame][currentLayer];
+      const label = document.getElementById(`frame-label-${currentFrame}`);
+      if (label) {
+        label.textContent = `Frame ${currentFrame + 1} - ${layer.name}`;
+        label.style.color = layer.color;
+      }
+    }
+
+    function updateLayersList() {
+      const layersList = document.getElementById('layers-list');
+      layersList.innerHTML = '';
+      
+      for (let i = frameLayers[currentFrame].length - 1; i >= 0; i--) {
+        const layer = frameLayers[currentFrame][i];
+        const layerItem = document.createElement('div');
+        layerItem.className = `layer-item ${i === currentLayer ? 'active' : ''}`;
+        layerItem.onclick = () => selectLayer(i);
+        
+        layerItem.innerHTML = `
+          <div style="width: 4px; height: 100%; background: ${layer.color}; border-radius: 2px; position: absolute; left: 0; top: 0;"></div>
+          <div class="layer-visibility" onclick="event.stopPropagation(); toggleLayerVisibility(${i})">
+            ${layer.visible ? 
+              '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' :
+              '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+            }
+          </div>
+          <div class="layer-name" style="color: ${layer.color}">${layer.name}</div>
+          <div class="layer-delete" onclick="event.stopPropagation(); deleteLayer(${i})">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </div>
+        `;
+        
+        layersList.appendChild(layerItem);
+      }
+    }
+
+    updateLayersList();
+    updateFrameLabel();
+    composeLayers();
+    saveState();
+    
+    /* Set initial viewport to phone on page load */
+    setViewport('phone');
+    
+    function startAutoAnimation() {
+      if (!animationInterval) {
+        isPreviewingLayer = false;
+        previewLayerIndex = -1;
+        animationFrame = 0;
+        animationInterval = setInterval(updateAnimation, 1000 / fps);
+        document.getElementById('play-btn').innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16"/>
+            <rect x="14" y="4" width="4" height="16"/>
+          </svg>
+          Pause
+        `;
+      }
+    }
+
+    startAutoAnimation();
+  </script>
+</body>
+</html>
 
