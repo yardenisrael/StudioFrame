@@ -19,21 +19,148 @@
       overflow-x: hidden;
     }
 
+    /* Added mobile-responsive styles for collapsible sidebars */
+    .sidebar-left, .sidebar-right {
+      transition: transform 0.3s ease;
+    }
+
+    .menu-toggle {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      background: #1a1a1a;
+      border: 2px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .menu-toggle:hover {
+      background: #252525;
+      border-color: #6366f1;
+    }
+
+    .menu-toggle:active {
+      transform: scale(0.95);
+    }
+
+    .menu-toggle-left {
+      top: 70px;
+      left: 10px;
+    }
+
+    .menu-toggle-right {
+      top: 70px;
+      right: 10px;
+    }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 998;
+    }
+
+    .overlay.active {
+      display: block;
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+      .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .sidebar-left {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 999;
+        transform: translateX(-100%);
+        width: 280px;
+        max-width: 85vw;
+        overflow-y: auto;
+        border-radius: 0;
+      }
+
+      .sidebar-left.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-right {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 999;
+        transform: translateX(100%);
+        width: 280px;
+        max-width: 85vw;
+        overflow-y: auto;
+        border-radius: 0;
+      }
+
+      .sidebar-right.open {
+        transform: translateX(0);
+      }
+
+      /* Adjust viewport toggle for mobile */
+      .viewport-toggle {
+        position: relative;
+        left: 0;
+        transform: none;
+        margin: 0 auto;
+      }
+
+      .viewport-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+
+      /* Make canvas grid single column on mobile */
+      .canvas-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Adjust top toolbar for mobile */
+      .panel:first-child {
+        flex-direction: column;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .panel:first-child > div:first-child {
+        justify-content: center;
+      }
+
+      .panel:first-child > div:last-child {
+        justify-content: center;
+      }
+    }
+
+    /* Improved border visibility with better box model */
     .canvas-container {
       position: relative;
       background: #1a1a1a;
-      /* Increased border width and added padding to ensure full border visibility */
-      border: 5px solid #2a2a2a;
-      border-radius: 8px;
+      border: 6px solid #2a2a2a;
+      border-radius: 12px;
       cursor: crosshair;
       transition: all 0.2s ease;
-      /* Dynamic aspect ratio based on viewport mode */
       aspect-ratio: var(--canvas-aspect-ratio, 1);
       max-width: 100%;
       box-sizing: border-box;
-      /* Added padding to prevent canvas from overlapping border */
-      padding: 8px;
+      padding: 10px;
       overflow: hidden;
+      /* Ensure border is always visible */
+      outline: 1px solid transparent;
     }
 
     .canvas-container canvas {
@@ -328,6 +455,28 @@
   </style>
 </head>
 <body>
+  <!-- Added hamburger menu toggles for mobile -->
+  <button class="menu-toggle menu-toggle-left" onclick="toggleLeftSidebar()" aria-label="Toggle tools menu">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+    </svg>
+  </button>
+
+  <button class="menu-toggle menu-toggle-right" onclick="toggleRightSidebar()" aria-label="Toggle layers menu">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/>
+      <path d="M2 12l10 5 10-5"/>
+    </svg>
+  </button>
+
+  <!-- Added overlay for mobile sidebar -->
+  <div class="overlay" id="sidebar-overlay" onclick="closeSidebars()"></div>
+
   <div class="flex flex-col h-screen">
     <!-- Top Toolbar -->
     <div class="panel border-b border-[#2a2a2a] rounded-none flex items-center justify-between px-6 py-3 relative">
@@ -337,7 +486,6 @@
         <span class="text-sm text-gray-500">Free Online Animation Tool</span>
       </div>
       
-      /* Added viewport toggle button at center top */
       <div class="viewport-toggle">
         <button class="viewport-btn" id="desktop-btn" onclick="setViewport('desktop')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -368,8 +516,9 @@
 
     <!-- Main Content -->
     <div class="flex flex-1 overflow-hidden">
+      <!-- Added sidebar-left class for mobile responsiveness -->
       <!-- Left Sidebar - Tools -->
-      <div class="w-64 panel border-r border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto">
+      <div class="w-64 panel border-r border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto sidebar-left" id="left-sidebar">
         <div>
           <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Drawing Tools</h3>
           <div class="flex flex-col gap-2">
@@ -615,8 +764,9 @@
         </div>
       </div>
 
+      <!-- Added sidebar-right class for mobile responsiveness -->
       <!-- Right Sidebar - History & Info -->
-      <div class="w-64 panel border-l border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto">
+      <div class="w-64 panel border-l border-[#2a2a2a] rounded-none flex flex-col gap-6 overflow-y-auto sidebar-right" id="right-sidebar">
         <div>
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Layers</h3>
@@ -1699,6 +1849,39 @@
         
         layersList.appendChild(layerItem);
       }
+    }
+
+    /* Added sidebar toggle functions for mobile */
+    function toggleLeftSidebar() {
+      const sidebar = document.getElementById('left-sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const isOpen = sidebar.classList.contains('open');
+      
+      closeSidebars();
+      
+      if (!isOpen) {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+      }
+    }
+
+    function toggleRightSidebar() {
+      const sidebar = document.getElementById('right-sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const isOpen = sidebar.classList.contains('open');
+      
+      closeSidebars();
+      
+      if (!isOpen) {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+      }
+    }
+
+    function closeSidebars() {
+      document.getElementById('left-sidebar').classList.remove('open');
+      document.getElementById('right-sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('active');
     }
 
     updateLayersList();
