@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tutorials - Studio Frame Animation Tool</title>
+  <meta name="description" content="Learn Studio Frame with step-by-step video tutorials. Master animation, layers, timeline, color selection, zoom, and frame management.">
+  <meta name="keywords" content="animation tutorials, Studio Frame tutorials, video tutorials, animation learning, frame by frame tutorial, onion skinning tutorial, layer tutorial, timeline tutorial">
+  <meta name="author" content="Studio Frame">
+  <meta name="robots" content="index, follow">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://studioframe.live/tutorials.html">
+  <meta property="og:title" content="Tutorials - Studio Frame Animation Tool">
+  <meta property="og:description" content="Learn Studio Frame with step-by-step video tutorials. Master animation, layers, timeline, color selection, zoom, and frame management.">
+  <meta property="og:image" content="https://studioframe.live/favicon.png">
+  <meta property="og:site_name" content="Studio Frame">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://studioframe.live/tutorials.html">
+  <meta property="twitter:title" content="Tutorials - Studio Frame Animation Tool">
+  <meta property="twitter:description" content="Learn Studio Frame with step-by-step video tutorials. Master animation, layers, timeline, color selection, zoom, and frame management.">
+  <meta property="twitter:image" content="https://studioframe.live/favicon.png">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://studioframe.live/tutorials.html">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="./favicon.png?v=1">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .tutorial-card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+    }
+    
+    .tutorial-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(99, 102, 241, 0.3);
+      transform: translateY(-2px);
+    }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      transition: all 0.3s ease;
+    }
+    
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #5b21b6, #7c3aed);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.3);
+    }
+    
+    .video-container {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio */
+      overflow: hidden;
+      border-radius: 12px;
+      background: #000;
+    }
+    
+    .video-container video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .play-button {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 60px;
+      height: 60px;
+      background: rgba(99, 102, 241, 0.9);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .play-button:hover {
+      background: rgba(99, 102, 241, 1);
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+    
+    .play-button svg {
+      width: 24px;
+      height: 24px;
+      color: white;
+      margin-left: 4px;
+    }
+    
+    /* Custom scrollbar styling to match index.html */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+      background: #28282e;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: #28282e;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: #5a5f65;
+      border-radius: 4px;
+      border: none;
+    }
+    
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="bg-black/20 backdrop-blur-sm border-b border-gray-800 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <img src="favicon.png" alt="Studio Frame Logo" class="w-8 h-8 rounded-lg">
+          <h1 class="text-2xl font-bold text-white">Studio Frame</h1>
+        </div>
+        <a href="/" class="btn-primary text-white px-6 py-2 rounded-lg font-medium">
+          Launch Studio Frame →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hero Section -->
+  <div class="max-w-7xl mx-auto px-6 py-16">
+    <div class="text-center mb-16">
+      <h1 class="text-5xl font-bold text-white mb-6">
+        Studio Frame <span class="gradient-text">Tutorials</span>
+      </h1>
+      <p class="text-xl text-gray-300 max-w-3xl mx-auto">
+        Master Studio Frame with our comprehensive video tutorials. Learn everything from basic drawing to advanced animation techniques.
+      </p>
+    </div>
+
+    <!-- Tutorials Grid -->
+    <div class="grid lg:grid-cols-2 gap-8 mb-16">
+      
+      <!-- Animation Frames Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">🎬 Animation Frames</h2>
+          <p class="text-gray-300">Learn how to create and manage animation frames for smooth motion.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="animationframes-video" preload="metadata">
+            <source src="animationframes.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('animationframes-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Creating new animation frames</li>
+            <li>Frame sequencing and timing</li>
+            <li>Frame duplication techniques</li>
+            <li>Managing frame order</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Timeline Frames Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">⏱️ Timeline Frames</h2>
+          <p class="text-gray-300">Master the timeline editor for precise frame control and animation timing.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="timelineframes-video" preload="metadata">
+            <source src="timelineframes.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('timelineframes-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Timeline navigation and controls</li>
+            <li>Frame duration adjustment</li>
+            <li>Playback speed control</li>
+            <li>Timeline scrubbing techniques</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Layers Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">📚 Layers</h2>
+          <p class="text-gray-300">Organize your animation with multiple layers for complex scenes.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="layers-video" preload="metadata">
+            <source src="layers.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('layers-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Creating and managing layers</li>
+            <li>Layer visibility controls</li>
+            <li>Layer ordering and organization</li>
+            <li>Independent layer animation</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Color Selector Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">🎨 Color Selector</h2>
+          <p class="text-gray-300">Master color selection and palette management for vibrant animations.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="colorselector-video" preload="metadata">
+            <source src="colorselector.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('colorselector-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Color palette navigation</li>
+            <li>Custom color creation</li>
+            <li>Color picker usage</li>
+            <li>Palette organization</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Zoom Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">🔍 Zoom</h2>
+          <p class="text-gray-300">Learn precision zooming techniques for detailed work and pixel-perfect animations.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="zoomin-video" preload="metadata">
+            <source src="zoomin.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('zoomin-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Mouse wheel zooming</li>
+            <li>Zoom level controls</li>
+            <li>Precision drawing techniques</li>
+            <li>Navigation while zoomed</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Lasso Eraser Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">✂️ Lasso Eraser</h2>
+          <p class="text-gray-300">Master the lasso eraser tool for precise selection and deletion.</p>
+        </div>
+        <div class="video-container mb-4">
+          <video id="lassoerzer-video" preload="metadata">
+            <source src="lassoerazer.mov" type="video/quicktime">
+            Your browser does not support the video tag.
+          </video>
+          <div class="play-button" onclick="toggleVideo('lassoerzer-video')">
+            <svg fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="space-y-2 text-sm text-gray-300">
+          <p><strong class="text-white">What you'll learn:</strong></p>
+          <ul class="list-disc list-inside space-y-1 ml-4">
+            <li>Lasso selection techniques</li>
+            <li>Precise area selection</li>
+            <li>Eraser tool usage</li>
+            <li>Custom shape deletion</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Getting Started Tutorial -->
+      <div class="tutorial-card rounded-xl p-6">
+        <div class="mb-4">
+          <h2 class="text-2xl font-bold text-white mb-2">🚀 Getting Started</h2>
+          <p class="text-gray-300">Complete beginner's guide to Studio Frame animation software.</p>
+        </div>
+        <div class="bg-gradient-to-r from-purple-900/20 to-blue-900/20 rounded-lg p-6 border border-purple-500/20">
+          <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mr-4">
+              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-white">Quick Start Guide</h3>
+              <p class="text-gray-300 text-sm">Perfect for beginners</p>
+            </div>
+          </div>
+          <div class="space-y-2 text-sm text-gray-300">
+            <p><strong class="text-white">What you'll learn:</strong></p>
+            <ul class="list-disc list-inside space-y-1 ml-4">
+              <li>Interface overview and navigation</li>
+              <li>Basic drawing tools</li>
+              <li>Creating your first animation</li>
+              <li>Exporting your work</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Learning Path Section -->
+    <div class="bg-gradient-to-r from-purple-900/20 to-blue-900/20 rounded-2xl p-8 mb-16 border border-purple-500/20">
+      <h2 class="text-3xl font-bold text-white mb-6 text-center">🎯 Recommended Learning Path</h2>
+      <div class="grid md:grid-cols-4 gap-6">
+        <div class="text-center">
+          <div class="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span class="text-2xl font-bold text-white">1</span>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-2">Start Here</h3>
+          <p class="text-gray-300 text-sm">Getting Started tutorial</p>
+        </div>
+        
+        <div class="text-center">
+          <div class="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span class="text-2xl font-bold text-white">2</span>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-2">Learn Basics</h3>
+          <p class="text-gray-300 text-sm">Animation Frames & Timeline</p>
+        </div>
+        
+        <div class="text-center">
+          <div class="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span class="text-2xl font-bold text-white">3</span>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-2">Master Tools</h3>
+          <p class="text-gray-300 text-sm">Layers, Colors & Lasso</p>
+        </div>
+        
+        <div class="text-center">
+          <div class="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span class="text-2xl font-bold text-white">4</span>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-2">Precision Work</h3>
+          <p class="text-gray-300 text-sm">Zoom & Advanced Techniques</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="text-center">
+      <a href="/" class="btn-primary text-white px-8 py-4 rounded-lg font-medium text-lg inline-block">
+        Start Creating Animations →
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="bg-black/20 backdrop-blur-sm border-t border-gray-800 mt-16">
+    <div class="max-w-7xl mx-auto px-6 py-8">
+      <div class="text-center text-gray-400">
+        <p class="mb-4">
+          <a href="/" class="hover:text-white transition-colors">Home</a> | 
+          <a href="features.html" class="hover:text-white transition-colors">Features</a> | 
+          <a href="tutorials.html" class="hover:text-white transition-colors">Tutorials</a>
+        </p>
+        <p class="text-sm">© 2024 Studio Frame. Free online animation software.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleVideo(videoId) {
+      const video = document.getElementById(videoId);
+      const playButton = video.nextElementSibling;
+      
+      if (video.paused) {
+        video.play();
+        playButton.style.display = 'none';
+      } else {
+        video.pause();
+        playButton.style.display = 'flex';
+      }
+    }
+    
+    // Hide play button when video starts playing
+    document.querySelectorAll('video').forEach(video => {
+      video.addEventListener('play', function() {
+        this.nextElementSibling.style.display = 'none';
+      });
+      
+      video.addEventListener('pause', function() {
+        this.nextElementSibling.style.display = 'flex';
+      });
+    });
+  </script>
+</body>
+</html>
