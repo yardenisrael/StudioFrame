@@ -3317,9 +3317,11 @@
     let magicLassoPoints = [];
     let isMagicLassoActive = false;
     let magicLassoMode = null; // 'inbetween' | 'detail'
-   let detailStyle = 'slender';
+    let detailStyle = 'slender';
     let isPreviewingLayer = false;
     let previewLayerIndex = -1;
+    const IS_MAC_PLATFORM = typeof navigator !== 'undefined' && /mac|iphone|ipad|ipod/i.test(navigator.platform || '');
+    let nextImageObjectId = 1;
 
     // Cut Out Mode state (separate mode)
     let isCutOutMode = false;
@@ -4104,6 +4106,42 @@
         titleRow.style.display = 'flex';
         titleRow.style.alignItems = 'center';
         titleRow.style.justifyContent = 'space-between';
+        // Left controls: move selected object layer up/down
+        const leftControls = document.createElement('div');
+        leftControls.style.display = 'flex';
+        leftControls.style.alignItems = 'center';
+        leftControls.style.gap = '4px';
+        const mkArrowBtn = (direction) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.title = direction === 'up' ? 'Move selected object up a layer' : 'Move selected object down a layer';
+          btn.style.width = '20px';
+          btn.style.height = '20px';
+          btn.style.borderRadius = '4px';
+          btn.style.border = '1px solid #3b3b3b';
+          btn.style.background = '#111';
+          btn.style.color = '#9ca3af';
+          btn.style.cursor = 'pointer';
+          btn.style.display = 'flex';
+          btn.style.alignItems = 'center';
+          btn.style.justifyContent = 'center';
+          btn.style.lineHeight = '20px';
+          btn.style.padding = '0';
+          btn.innerHTML = direction === 'up'
+            ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>'
+            : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>';
+          btn.addEventListener('click', (e) => {
+            try { e.preventDefault(); e.stopPropagation(); } catch (_e) {}
+            // In this app, lower layerIndex renders on top. So:
+            // - "Up" => decrease layerIndex
+            // - "Down" => increase layerIndex
+            const delta = direction === 'up' ? -1 : 1;
+            moveCutoutSelectedObjectLayer(delta);
+          });
+          return btn;
+        };
+        leftControls.appendChild(mkArrowBtn('up'));
+        leftControls.appendChild(mkArrowBtn('down'));
         const title = document.createElement('div');
         title.textContent = 'Layers Created';
         title.style.color = '#9ca3af';
@@ -4133,6 +4171,7 @@
         addBtn.addEventListener('click', () => {
           if (typeof addCutoutLayer === 'function') addCutoutLayer();
         });
+        titleRow.appendChild(leftControls);
         titleRow.appendChild(title);
         titleRow.appendChild(addBtn);
         const sep = document.createElement('div');
@@ -4969,6 +5008,124 @@
     // Cutout selection object and overlay (mirrors regular mode but scoped to cutout)
     let cutoutActiveObject = null;
     let cutoutObjectCounter = 0;
+    
+    function normalizeCutoutKeys(keys) {
+      // Reuse generic key-cloner; then ensure expected arrays exist
+      const cloned = cloneImageKeys(keys);
+      if (!Array.isArray(cloned.position)) cloned.position = [];
+      if (!Array.isArray(cloned.zoom)) cloned.zoom = [];
+      if (!Array.isArray(cloned.rotation)) cloned.rotation = [];
+      if (!Array.isArray(cloned.opacity)) cloned.opacity = [];
+      return cloned;
+    }
+    
+    function duplicateCutoutObjectInClip(clip, source, offset = 0) {
+      if (!clip || !source) return null;
+      if (!Array.isArray(clip.objects)) clip.objects = [];
+      // Keep counter ahead of any existing numeric ids in this clip
+      try {
+        for (const o of clip.objects) {
+          if (o && typeof o.id === 'number') cutoutObjectCounter = Math.max(cutoutObjectCounter, o.id);
+        }
+        if (source && typeof source.id === 'number') cutoutObjectCounter = Math.max(cutoutObjectCounter, source.id);
+      } catch (_e) {}
+      const newId = (++cutoutObjectCounter);
+      const clone = {
+        ...source,
+        id: newId,
+        name: (source && source.isImage) ? `Image ${newId}` : `Object ${newId}`,
+        x: (Number.isFinite(source.x) ? source.x : 0) + offset,
+        y: (Number.isFinite(source.y) ? source.y : 0) + offset,
+        layerIndex: Number.isFinite(source.layerIndex) ? source.layerIndex : cutoutActiveLayerIndex,
+        scale: Number.isFinite(source.scale) ? source.scale : 1,
+        scaleX: (typeof source.scaleX === 'number') ? source.scaleX : 1,
+        scaleY: (typeof source.scaleY === 'number') ? source.scaleY : 1,
+        rotation: Number.isFinite(source.rotation) ? source.rotation : (source.rotation || 0),
+        opacity: (typeof source.opacity === 'number') ? source.opacity : 1,
+        color: source.color || (cutoutObjectPalette[clip.objects.length % cutoutObjectPalette.length] || '#6366f1'),
+        keys: normalizeCutoutKeys(source.keys)
+      };
+      clip.objects.push(clone);
+      return clone;
+    }
+    
+    function eraseCutoutObjectPixelsFromClipCanvas(clip, obj) {
+      if (!clip || !clip.ctx || !clip.canvas || !obj) return false;
+      if (!obj.img) return false;
+      try {
+        clip.ctx.save();
+        clip.ctx.globalCompositeOperation = 'destination-out';
+        // drawRotatedImage knows how to apply x/y/scale/rotation consistent with preview rendering
+        drawRotatedImage(clip.ctx, obj);
+        clip.ctx.restore();
+        return true;
+      } catch (_e) {
+        try { clip.ctx.restore(); } catch (_e2) {}
+        return false;
+      }
+    }
+    
+    function moveCutoutSelectedObjectLayer(delta) {
+      if (!isCutOutMode) return false;
+      if (!cutoutSelectedObject) return false;
+      const idx = (typeof selectedCutoutClipIndex === 'number' && selectedCutoutClipIndex >= 0)
+        ? selectedCutoutClipIndex
+        : (typeof getActiveCutoutClipIndexAt === 'function' ? getActiveCutoutClipIndexAt(cutoutCurrentTime) : -1);
+      if (idx < 0 || !Array.isArray(cutoutClips) || !cutoutClips[idx]) return false;
+      const clip = cutoutClips[idx];
+      const objects = Array.isArray(clip.objects) ? clip.objects : [];
+      if (!objects.length) return false;
+      // Resolve to the actual object stored in the clip, if possible
+      const targetId = cutoutSelectedObject.id;
+      const obj = (targetId != null)
+        ? objects.find(o => o && o.id === targetId)
+        : (objects.includes(cutoutSelectedObject) ? cutoutSelectedObject : null);
+      if (!obj) return false;
+      // Determine number of layers, always reconciling against actual object indices to avoid contradictions
+      const maxIndex = objects.reduce((m, o) => Math.max(m, Number.isFinite(o && o.layerIndex) ? o.layerIndex : 0), -1);
+      let numLayers = Math.max(Number.isFinite(clip.numLayers) ? clip.numLayers : 0, maxIndex + 1, 1);
+      clip.numLayers = numLayers;
+      const cur = Number.isFinite(obj.layerIndex) ? obj.layerIndex : 0;
+
+      // If moving beyond current layer range, create new layers as needed:
+      // - Up/front (delta < 0): if already at top layer 0, create a new top layer by shifting all objects down (+1)
+      // - Down/back (delta > 0): if already at bottom layer (numLayers-1), create a new bottom layer by extending numLayers
+      let next = cur + delta;
+      try { saveState(); } catch (_e) {}
+      if (delta < 0 && cur <= 0) {
+        // Create new top layer (index 0) by shifting all existing layers down
+        for (const o of objects) {
+          if (!o) continue;
+          const li = Number.isFinite(o.layerIndex) ? o.layerIndex : 0;
+          o.layerIndex = li + 1;
+        }
+        obj.layerIndex = 0;
+        numLayers = numLayers + 1;
+        clip.numLayers = numLayers;
+        next = 0;
+      } else if (delta > 0 && cur >= (numLayers - 1)) {
+        // Create new bottom layer by extending layer count
+        obj.layerIndex = cur + 1;
+        numLayers = Math.max(numLayers + 1, (obj.layerIndex + 1));
+        clip.numLayers = numLayers;
+        next = obj.layerIndex;
+      } else {
+        // Within existing range: just move
+        next = Math.max(0, Math.min(numLayers - 1, next));
+        if (next === cur) return false;
+        obj.layerIndex = next;
+      }
+      // Keep active layer in sync with the moved object
+      cutoutActiveLayerIndex = next;
+      // Refresh UI + preview
+      try { if (typeof renderCutoutLayersPanel === 'function') renderCutoutLayersPanel(); } catch (_e) {}
+      try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+      try { renderCutoutPreviewForTime(); } catch (_e) {}
+      try { if (typeof renderCutoutClips === 'function') renderCutoutClips(); } catch (_e) {}
+      try { saveState(); } catch (_e) {}
+      return true;
+    }
+    
     let lastOilAngle = 0;
     // Throttle preview/timeline updates to once per animation frame during scrubbing
     let cutoutPreviewRAF = null;
@@ -5632,11 +5789,19 @@
       cutoutMoveOverlayCanvas.style.height = '100%';
       cutoutMoveOverlayCanvas.style.pointerEvents = 'auto';
       cutoutMoveOverlayCanvas.style.zIndex = '1002';
+      cutoutMoveOverlayCanvas.style.transition = 'none'; // Prevent animation on zoom
+      cutoutMoveOverlayCanvas.style.transformOrigin = 'center center'; // Center transforms
       cutoutMoveOverlayCtx = cutoutMoveOverlayCanvas.getContext('2d');
       const cs = window.getComputedStyle(container);
       if (cs.position === 'static') container.style.position = 'relative';
       container.appendChild(cutoutMoveOverlayCanvas);
       cutoutMoveOverlayCanvas.addEventListener('mousedown', cutoutSelectionMouseDown);
+      // Enable wheel zoom even when object is selected - call zoom handler without transforming overlay
+      cutoutMoveOverlayCanvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        cutoutHandleWheelZoom(e);
+        // Overlay will be re-rendered by the zoom handler, not transformed directly
+      }, { passive: false });
       window.addEventListener('mouseup', cutoutSelectionMouseUp);
       window.addEventListener('mousemove', cutoutSelectionMouseMove);
       // Commit selection when clicking outside the canvas container
@@ -6141,6 +6306,30 @@
           chip.style.border = `1px solid ${obj.color || '#6366f1'}`;
           chip.style.cursor = 'grab';
           chip.setAttribute('draggable', 'true');
+          // Click to select this object (mirrors "Objects Created" behavior)
+          chip.addEventListener('click', (e) => {
+            try { e.preventDefault(); } catch (_e) {}
+            try { e.stopPropagation(); } catch (_e) {}
+            // Selecting an object also sets the active layer to that object's layer
+            if (Number.isFinite(obj.layerIndex)) {
+              cutoutActiveLayerIndex = obj.layerIndex;
+            }
+            cutoutActiveObject = obj;
+            cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+            cutoutSelectedObject = obj;
+            try { cutoutBeginSelectionOverlay(); } catch (_e) {}
+            try {
+              if (typeof updateCutoutPositionDisplay === 'function') updateCutoutPositionDisplay(obj.x, obj.y);
+              if (typeof updateCutoutZoomDisplay === 'function') updateCutoutZoomDisplay(obj.scaleX || 1, obj.scaleY || 1);
+              if (typeof updateCutoutRotationDisplay === 'function') updateCutoutRotationDisplay(((obj.rotation || 0) * 180) / Math.PI);
+              if (typeof updateCutoutOpacityDisplay === 'function') updateCutoutOpacityDisplay((typeof obj.opacity === 'number') ? obj.opacity : 1);
+            } catch (_e) {}
+            try { drawCutoutTimeline(); } catch (_e) {}
+            try { updateRowKeyActiveStates(); } catch (_e) {}
+            try { renderCutoutPreviewForTime(); } catch (_e) {}
+            try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+            try { renderCutoutLayersPanel(); } catch (_e) {}
+          });
           chip.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text/plain', String(obj.id));
             e.dataTransfer.effectAllowed = 'move';
@@ -6339,6 +6528,9 @@
       cutoutSelectedObject.opacity = v;
       cutoutRenderSelectionOverlay();
       updateCutoutOpacityDisplay(v);
+      if (typeof scheduleCutoutPreviewForTime === 'function') {
+        scheduleCutoutPreviewForTime();
+      }
     }
     function beginOpaSliderDrag(e) {
       if (!cutoutSelectedObject) return;
@@ -6800,6 +6992,23 @@
             }
           }
           if (!switched) {
+            // Option+drag on mac: duplicate the selected object and drag the clone
+            const duplicateDrag = (currentTool === 'select') && shouldDuplicateImageDrag(e);
+            if (duplicateDrag) {
+              try {
+                const activeIdxDup = getActiveCutoutClipIndexAt(cutoutCurrentTime);
+                if (activeIdxDup >= 0 && cutoutClips[activeIdxDup]) {
+                  const clipDup = cutoutClips[activeIdxDup];
+                  const clone = duplicateCutoutObjectInClip(clipDup, cutoutSelectedObject, 0);
+                  if (clone) {
+                    cutoutSelectedObject = clone;
+                    cutoutActiveObject = clone;
+                    cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+                    try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+                  }
+                }
+              } catch (_e) {}
+            }
             cutoutIsDraggingObj = true;
             imageDragOffsetX = x - cutoutSelectedObject.x;
             imageDragOffsetY = y - cutoutSelectedObject.y;
@@ -6889,6 +7098,27 @@
             const deg = ((hit.rotation || 0) * 180) / Math.PI;
             if (typeof updateCutoutRotationDisplay === 'function') updateCutoutRotationDisplay(deg);
             if (typeof updateCutoutOpacityDisplay === 'function') updateCutoutOpacityDisplay((typeof hit.opacity === 'number') ? hit.opacity : 1);
+            // If Option is held on mac, duplicate immediately and begin dragging the clone
+            const duplicateDrag = (currentTool === 'select') && shouldDuplicateImageDrag(e);
+            if (duplicateDrag) {
+              try {
+                const clone = duplicateCutoutObjectInClip(clip, hit, 0);
+                if (clone) {
+                  cutoutSelectedObject = clone;
+                  cutoutActiveObject = clone;
+                  cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+                  // Start dragging right away so "option+drag to duplicate" works on first interaction
+                  cutoutIsDraggingObj = true;
+                  imageDragOffsetX = x - clone.x;
+                  imageDragOffsetY = y - clone.y;
+                  try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+                  try { cutoutRenderSelectionOverlay(); } catch (_e) {}
+                  try { renderCutoutPreviewForTime(); } catch (_e) {}
+                  drawCutoutTimeline();
+                  return;
+                }
+              } catch (_e) {}
+            }
             drawCutoutTimeline();
             return;
           }
@@ -7028,6 +7258,23 @@
         return;
       }
       // Default: move
+      // Option+drag on mac: duplicate the selected object and drag the clone
+      const duplicateDrag2 = (currentTool === 'select') && shouldDuplicateImageDrag(e);
+      if (duplicateDrag2) {
+        try {
+          const activeIdxDup2 = getActiveCutoutClipIndexAt(cutoutCurrentTime);
+          if (activeIdxDup2 >= 0 && cutoutClips[activeIdxDup2]) {
+            const clipDup2 = cutoutClips[activeIdxDup2];
+            const clone = duplicateCutoutObjectInClip(clipDup2, cutoutSelectedObject, 0);
+            if (clone) {
+              cutoutSelectedObject = clone;
+              cutoutActiveObject = clone;
+              cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+              try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+            }
+          }
+        } catch (_e) {}
+      }
       cutoutIsDraggingObj = true;
       imageDragOffsetX = x - cutoutSelectedObject.x;
       imageDragOffsetY = y - cutoutSelectedObject.y;
@@ -7058,12 +7305,8 @@
         const localY = centerY + dx * Math.sin(-rot) + dy * Math.cos(-rot);
         obj.pivotLocalX = Math.max(0, Math.min(w, localX - obj.x));
         obj.pivotLocalY = Math.max(0, Math.min(h, localY - obj.y));
-        // update handle distance baseline so the rotation node follows the pivot
-        try {
-          const geom = calculateSelectionHandleGeometry(obj);
-          const baseLen = Math.hypot(geom.topMid.x - geom.pivot.x, geom.topMid.y - geom.pivot.y);
-          obj.rotationHandleDistance = baseLen + ROTATION_HANDLE_OFFSET;
-        } catch (_e) {}
+        // Preserve the rotation handle distance when moving pivot
+        // (rotation node stays at the same distance from the new pivot position)
         try { cutoutRenderSelectionOverlay(); } catch (_e) {}
         return;
       }
@@ -7217,6 +7460,7 @@
     
     function cutoutSelectionMouseUp() {
       if (!cutoutSelectedObject) return;
+      const didInteract = !!(cutoutIsDraggingObj || cutoutIsRotatingObj || cutoutIsResizingObj || cutoutIsDraggingPivot);
       // Check if this was a bone-linked rotation - if so, position changed and should be persisted
       let wasBoneLinkedRotation = false;
       try {
@@ -7289,6 +7533,10 @@
       // Do not auto-create/sync keys when not recording; keys are created only via key icons.
       // Just ensure preview reflects latest transforms at the current time.
       try { renderCutoutPreviewForTime(); updateRowKeyActiveStates(); } catch (_e) {}
+      // Post-action snapshot so Ctrl/Cmd+Z reverses transforms/duplication done via selection overlay
+      if (didInteract) {
+        try { saveState(); } catch (_e) {}
+      }
     }
     
     function pathFromPoints(ctx, points) {
@@ -7922,29 +8170,29 @@
       pmx.save(); pmx.translate(-minX, -minY); pathFromPoints(pmx, points); pmx.fillStyle = '#fff'; pmx.fill(); pmx.restore();
       outCtx.drawImage(polyMask, 0, 0);
       outCtx.restore();
+      // Subtract only original (non-extended) pixels to allow layering
+      // Don't subtract the entire existing raster - only subtract non-mask pixels
       outCtx.save();
       outCtx.globalCompositeOperation = 'destination-out';
-      outCtx.drawImage(srcOffscreen, 0, 0);
-      outCtx.restore();
-      // 4) Repeatability: clear previously extended pixels inside polygon before drawing new fill
-      if (maskSlot && maskSlot.canvas) {
-        ctx.save();
-        pathFromPoints(ctx, points);
-        ctx.clip();
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.drawImage(maskSlot.canvas, 0, 0);
-        ctx.restore();
-        const mctx = maskSlot.ctx;
-        mctx.save();
-        mctx.globalCompositeOperation = 'destination-out';
-        const clearPoly = document.createElement('canvas');
-        clearPoly.width = ctx.canvas.width; clearPoly.height = ctx.canvas.height;
-        const cpx = clearPoly.getContext('2d');
-        cpx.save(); pathFromPoints(cpx, points); cpx.fillStyle = '#fff'; cpx.fill(); cpx.restore();
-        mctx.drawImage(clearPoly, 0, 0);
-        mctx.restore();
+      // Create a canvas with only the original content (not previously extended)
+      const originalOnly = document.createElement('canvas');
+      originalOnly.width = bw; originalOnly.height = bh;
+      const origCtx = originalOnly.getContext('2d');
+      origCtx.putImageData(existing, 0, 0);
+      // Remove previously extended pixels from the original to get true original
+      if (maskSlot && maskSlot.ctx) {
+        try {
+          const priorMask = maskSlot.ctx.getImageData(minX, minY, bw, bh);
+          origCtx.save();
+          origCtx.globalCompositeOperation = 'destination-out';
+          origCtx.putImageData(priorMask, 0, 0);
+          origCtx.restore();
+        } catch (_e) {}
       }
-      // 5) Draw and update mask
+      outCtx.drawImage(originalOnly, 0, 0);
+      outCtx.restore();
+      // 4) Don't clear old extensions from canvas - new layers should appear on top
+      // 5) Draw new extension on top of everything and update mask
       ctx.save();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
@@ -8432,6 +8680,7 @@
       cutoutCanvas.style.transformOrigin = origin;
       cutoutCanvas.style.transform = t;
       if (cutoutMoveOverlayCanvas) {
+        cutoutMoveOverlayCanvas.style.transition = 'none'; // Prevent animation
         cutoutMoveOverlayCanvas.style.transformOrigin = origin;
         cutoutMoveOverlayCanvas.style.transform = t;
       }
@@ -10222,14 +10471,25 @@
       // If an object is selected, delete only that object (not the whole clip)
       if (cutoutSelectedObject) {
         try { saveState(); } catch (_e) {}
+        let removedFromObjects = false;
         if (Array.isArray(clip.objects) && clip.objects.length) {
           const targetId = cutoutSelectedObject.id;
           const existingIdx = (targetId != null)
             ? clip.objects.findIndex(o => o && o.id === targetId)
             : clip.objects.findIndex(o => o === cutoutSelectedObject);
           if (existingIdx >= 0) {
-            clip.objects.splice(existingIdx, 1);
+            const removed = clip.objects.splice(existingIdx, 1)[0];
+            removedFromObjects = true;
+            // Remove any bones attached to this object
+            try {
+              cutoutBones = (Array.isArray(cutoutBones) ? cutoutBones : []).filter(b => !(b && b.clipIndex === idx && (b.objectRef === removed || (removed && b.objectRef && removed.id != null && b.objectRef.id != null && removed.id === b.objectRef.id))));
+            } catch (_e) {}
           }
+        }
+        // If the selected thing wasn't in clip.objects, it's likely a "shadow/baked" image (pixels on clip.canvas).
+        // In that case, also erase its pixels from the clip canvas so Delete removes what you see.
+        if (!removedFromObjects) {
+          try { eraseCutoutObjectPixelsFromClipCanvas(clip, cutoutSelectedObject); } catch (_e) {}
         }
         // Tear down selection overlay and refresh UI
         try { cutoutCancelSelectionOverlay(); } catch (_e) {}
@@ -12802,6 +13062,7 @@
       }
       // Keep selection overlay (if present) in sync with zoom on the active frame
       if (typeof currentFrame === 'number' && frameIndex === currentFrame && typeof moveOverlayCanvas !== 'undefined' && moveOverlayCanvas) {
+        moveOverlayCanvas.style.transition = 'none'; // Prevent animation
         moveOverlayCanvas.style.transformOrigin = origin;
         moveOverlayCanvas.style.transform = `scale(${zoomLevels[frameIndex]})`;
       }
@@ -13008,7 +13269,18 @@
     function saveState() {
       const state = {
         frameLayers: frameLayers.map(layers => layers.map(layer => layer.canvas.toDataURL())),
-        images: frameLayers.map(layers => layers.map(layer => Array.isArray(layer.images) ? layer.images.map(obj => ({ src: obj.src, x: obj.x, y: obj.y, scale: obj.scale })) : [])),
+        images: frameLayers.map(layers => layers.map(layer => Array.isArray(layer.images) ? layer.images.map(obj => ({ 
+          src: obj.src, 
+          x: obj.x, 
+          y: obj.y, 
+          scale: obj.scale,
+          scaleX: (typeof obj.scaleX === 'number') ? obj.scaleX : 1,
+          scaleY: (typeof obj.scaleY === 'number') ? obj.scaleY : 1,
+          rotation: obj.rotation || 0,
+          pivotLocalX: (typeof obj.pivotLocalX === 'number') ? obj.pivotLocalX : undefined,
+          pivotLocalY: (typeof obj.pivotLocalY === 'number') ? obj.pivotLocalY : undefined,
+          rotationHandleDistance: (typeof obj.rotationHandleDistance === 'number') ? obj.rotationHandleDistance : undefined
+        })) : [])),
         onionSkinEnabled: onionSkinEnabled,
         // Persist selection-lasso enable so undo/redo doesn't disable segmentation
         selectLassoEnabled: !!selectLassoEnabled,
@@ -13059,6 +13331,9 @@
                 opacity: Number.isFinite(o.opacity) ? o.opacity : 1,
                 drawW: o.drawW,
                 drawH: o.drawH,
+                pivotLocalX: (typeof o.pivotLocalX === 'number') ? o.pivotLocalX : undefined,
+                pivotLocalY: (typeof o.pivotLocalY === 'number') ? o.pivotLocalY : undefined,
+                rotationHandleDistance: (typeof o.rotationHandleDistance === 'number') ? o.rotationHandleDistance : undefined,
                 keys: {
                   position: Array.isArray(o.keys && o.keys.position) ? o.keys.position.map(k => ({ time: k.time, x: k.x, y: k.y })) : [],
                   zoom: Array.isArray(o.keys && o.keys.zoom) ? o.keys.zoom.map(k => ({ time: k.time, sx: k.sx, sy: k.sy })) : [],
@@ -13212,7 +13487,12 @@
                   updateThumbnail(frameIndex);
                 };
                 img.src = obj.src;
-        layer.images.push({ img, src: obj.src, x: obj.x, y: obj.y, scale: obj.scale, scaleX: 1, scaleY: 1, rotation: obj.rotation || 0 });
+        const restoredObj = { img, src: obj.src, x: obj.x, y: obj.y, scale: obj.scale, scaleX: obj.scaleX || 1, scaleY: obj.scaleY || 1, rotation: obj.rotation || 0 };
+        // Restore pivot and rotation handle properties if present (prevents memory buildup)
+        if (typeof obj.pivotLocalX === 'number') restoredObj.pivotLocalX = obj.pivotLocalX;
+        if (typeof obj.pivotLocalY === 'number') restoredObj.pivotLocalY = obj.pivotLocalY;
+        if (typeof obj.rotationHandleDistance === 'number') restoredObj.rotationHandleDistance = obj.rotationHandleDistance;
+        layer.images.push(restoredObj);
               });
             }
           });
@@ -13385,6 +13665,10 @@
                       opacity: Array.isArray(o.keys && o.keys.opacity) ? o.keys.opacity.map(k => ({ time: k.time, value: k.value })) : []
                     }
                   };
+                  // Restore pivot and rotation handle properties if present (prevents memory buildup)
+                  if (typeof o.pivotLocalX === 'number') baseObj.pivotLocalX = o.pivotLocalX;
+                  if (typeof o.pivotLocalY === 'number') baseObj.pivotLocalY = o.pivotLocalY;
+                  if (typeof o.rotationHandleDistance === 'number') baseObj.rotationHandleDistance = o.rotationHandleDistance;
                   oimg.onload = () => {
                     if (typeof renderCutoutPreviewForTime === 'function') renderCutoutPreviewForTime();
                   };
@@ -15980,6 +16264,98 @@
       document.getElementById('size-value').textContent = size;
     }
 
+    function cloneImageKeys(keys) {
+      const cloned = {};
+      if (!keys || typeof keys !== 'object') return cloned;
+      for (const prop in keys) {
+        if (!Object.prototype.hasOwnProperty.call(keys, prop)) continue;
+        const arr = keys[prop];
+        if (Array.isArray(arr)) {
+          cloned[prop] = arr.map(entry => ({ ...(entry || {}) }));
+        }
+      }
+      return cloned;
+    }
+
+    function ensureImageObjectId(obj) {
+      if (!obj || typeof obj !== 'object') return;
+      if (typeof obj.id === 'number') {
+        nextImageObjectId = Math.max(nextImageObjectId, obj.id + 1);
+        return;
+      }
+      obj.id = nextImageObjectId++;
+    }
+
+    function duplicateImageForLayer(layer, source, offset = 0) {
+      if (!layer || !Array.isArray(layer.images) || !source) return null;
+      const clone = {
+        ...source,
+        x: (source.x || 0) + offset,
+        y: (source.y || 0) + offset,
+        keys: cloneImageKeys(source.keys),
+        layerIndex: Number.isFinite(source.layerIndex) ? source.layerIndex : currentLayer
+      };
+      ensureImageObjectId(clone);
+      layer.images.push(clone);
+      return clone;
+    }
+
+    function shouldDuplicateImageDrag(event) {
+      if (!event) return false;
+      return IS_MAC_PLATFORM && event.altKey;
+    }
+
+    function duplicateSelectedImageObjectWithShortcut() {
+      // In Cut Out mode, duplicate the currently active/selected cutout object (Windows: Ctrl+D)
+      if (isCutOutMode) {
+        try {
+          const idx = (typeof selectedCutoutClipIndex === 'number' && selectedCutoutClipIndex >= 0)
+            ? selectedCutoutClipIndex
+            : (typeof getActiveCutoutClipIndexAt === 'function' ? getActiveCutoutClipIndexAt(cutoutCurrentTime) : -1);
+          if (idx < 0 || !Array.isArray(cutoutClips) || !cutoutClips[idx]) return false;
+          const clip = cutoutClips[idx];
+          const source = cutoutSelectedObject || cutoutActiveObject;
+          if (!source) return false;
+          const clone = duplicateCutoutObjectInClip(clip, source, 12);
+          if (!clone) return false;
+          cutoutSelectedObject = clone;
+          cutoutActiveObject = clone;
+          cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+          try { if (typeof cutoutBeginSelectionOverlay === 'function') cutoutBeginSelectionOverlay(); } catch (_e) {}
+          try { if (typeof updateCutoutPositionDisplay === 'function') updateCutoutPositionDisplay(clone.x, clone.y); } catch (_e) {}
+          try { if (typeof updateCutoutZoomDisplay === 'function') updateCutoutZoomDisplay(clone.scaleX || 1, clone.scaleY || 1); } catch (_e) {}
+          try { if (typeof updateCutoutRotationDisplay === 'function') updateCutoutRotationDisplay(((clone.rotation || 0) * 180) / Math.PI); } catch (_e) {}
+          try { if (typeof updateCutoutOpacityDisplay === 'function') updateCutoutOpacityDisplay((typeof clone.opacity === 'number') ? clone.opacity : 1); } catch (_e) {}
+          try { drawCutoutTimeline(); updateRowKeyActiveStates(); } catch (_e) {}
+          try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
+          try { renderCutoutPreviewForTime(); } catch (_e) {}
+          // Post-action snapshot so Ctrl/Cmd+Z reverts duplication
+          try { saveState(); } catch (_e) {}
+          return true;
+        } catch (_e) {
+          return false;
+        }
+      }
+
+      // Regular mode: duplicate selected image object (Windows: Ctrl+D)
+      if (!selectedImageObject) return false;
+      const layer = frameLayers[currentFrame] && frameLayers[currentFrame][currentLayer];
+      if (!layer || !Array.isArray(layer.images)) return false;
+      const clone = duplicateImageForLayer(layer, selectedImageObject, 12);
+      if (!clone) return false;
+      selectedImageObject = clone;
+      isDraggingImage = false;
+      isResizingImage = false;
+      isRotatingImage = false;
+      activeTransformHandle = null;
+      composeLayers(currentFrame);
+      updateThumbnail(currentFrame);
+      refreshSelectionOverlay();
+      // Post-action snapshot so Ctrl/Cmd+Z reverts duplication
+      try { saveState(); } catch (_e) {}
+      return true;
+    }
+
     function updateOpacity(opacity) {
       brushOpacity = opacity / 100;
       document.getElementById('opacity-value').textContent = opacity + '%';
@@ -15987,7 +16363,8 @@
 
     function updateOnionOpacity(opacity) {
       onionOpacity = opacity / 100;
-      document.getElementById('onion-opacity-value').textContent = opacity + '%';
+      const valueEl = document.getElementById('onion-opacity-value');
+      if (valueEl) valueEl.textContent = opacity + '%';
       updateOnionSkin();
     }
 
@@ -16337,13 +16714,17 @@
       // Second priority: check if clicking on any image (for selection or dragging)
       const hit = hitTestImage(layer, lastX, lastY);
       if (hit) {
-        // Clicking on an image
-        selectedImageObject = hit;
+        let activeImage = hit;
+        const duplicateDrag = currentTool === 'select' && shouldDuplicateImageDrag(e);
         if (currentTool === 'select') {
-          // Only allow dragging images when select tool is active
-          imageDragOffsetX = lastX - hit.x;
-          imageDragOffsetY = lastY - hit.y;
           saveState();
+          if (duplicateDrag) {
+            const clone = duplicateImageForLayer(layer, hit, 0);
+            if (clone) activeImage = clone;
+          }
+          selectedImageObject = activeImage;
+          imageDragOffsetX = lastX - activeImage.x;
+          imageDragOffsetY = lastY - activeImage.y;
           beginImageDrag();
           isDraggingImage = true;
           activeTransformHandle = null;
@@ -16351,6 +16732,7 @@
           isRotatingImage = false;
           return; // Don't continue to tool-specific logic
         }
+        selectedImageObject = hit;
         // If not select tool, just select the image but continue with tool logic
       } else {
         // Clicked on empty space - clear selection
@@ -16725,11 +17107,8 @@
         const localY = centerY + dx * Math.sin(-rot) + dy * Math.cos(-rot);
         obj.pivotLocalX = Math.max(0, Math.min(w, localX - obj.x));
         obj.pivotLocalY = Math.max(0, Math.min(h, localY - obj.y));
-        try {
-          const geom = calculateSelectionHandleGeometry(obj);
-          const baseLen = Math.hypot(geom.topMid.x - geom.pivot.x, geom.topMid.y - geom.pivot.y);
-          obj.rotationHandleDistance = baseLen + ROTATION_HANDLE_OFFSET;
-        } catch (_e) {}
+        // Preserve the rotation handle distance when moving pivot
+        // (rotation node stays at the same distance from the new pivot position)
         refreshSelectionOverlay();
         lastX = x;
         lastY = y;
@@ -19987,8 +20366,18 @@
       const geometry = calculateSelectionHandleGeometry(obj);
       const { corners, rotationHandle, pivot } = geometry;
 
+      // Compensate hit radius for zoom to maintain accuracy when zoomed in
+      let currentZoom = 1;
+      if (typeof cutoutZoomLevel === 'number' && cutoutZoomLevel > 0 && isCutOutMode) {
+        currentZoom = cutoutZoomLevel;
+      } else if (typeof currentFrame === 'number' && Array.isArray(zoomLevels) && zoomLevels[currentFrame]) {
+        currentZoom = zoomLevels[currentFrame];
+      }
+      const zoomCompensation = 1 / currentZoom;
+
       // Use circular hit detection radius (more forgiving and works with rotation)
-      const hitRadius = (HANDLE_SIZE + HANDLE_HIT_EXTRA) / 2;
+      // Compensate for zoom to keep hit area consistent in screen space
+      const hitRadius = ((HANDLE_SIZE + HANDLE_HIT_EXTRA) / 2) * zoomCompensation;
 
       // Check pivot handle (draggable center)
       if (pivot && Number.isFinite(pivot.x) && Number.isFinite(pivot.y)) {
@@ -20991,9 +21380,20 @@
     function drawResizeHandles(ctx, obj) {
       const geometry = calculateSelectionHandleGeometry(obj);
       const { corners, center, pivot, rotationHandle } = geometry;
-      const cornerRadius = Math.max(8, HANDLE_SIZE * 0.45);
-      const centerRadius = Math.max(12, HANDLE_SIZE * 0.55);
-      const rotationRadius = Math.max(8, HANDLE_SIZE * 0.45);
+      
+      // Compensate for canvas zoom (both cutout and regular frame mode) to keep handles constant size
+      let currentZoom = 1;
+      if (typeof cutoutZoomLevel === 'number' && cutoutZoomLevel > 0 && isCutOutMode) {
+        currentZoom = cutoutZoomLevel;
+      } else if (typeof currentFrame === 'number' && Array.isArray(zoomLevels) && zoomLevels[currentFrame]) {
+        currentZoom = zoomLevels[currentFrame];
+      }
+      const zoomCompensation = 1 / currentZoom;
+      
+      const cornerRadius = Math.max(8, HANDLE_SIZE * 0.45) * zoomCompensation;
+      const centerRadius = Math.max(12, HANDLE_SIZE * 0.55) * zoomCompensation;
+      const rotationRadius = Math.max(8, HANDLE_SIZE * 0.45) * zoomCompensation;
+      const lineWidth = 3.5 * zoomCompensation;
       const strokeColor = '#3b82f6';
       const defaultFill = '#ffffff';
       
@@ -21001,11 +21401,11 @@
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // Draw white lines connecting corner nodes
+      // Draw white lines connecting corner nodes (with reduced opacity)
       if (corners.length) {
         ctx.setLineDash([]);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.63)'; // 0.9 * 0.7 = 0.63 for 70% of original
+        ctx.lineWidth = lineWidth;
         ctx.beginPath();
         ctx.moveTo(corners[0].cx, corners[0].cy);
         for (let i = 1; i < corners.length; i++) {
@@ -21015,20 +21415,20 @@
         ctx.stroke();
       }
 
-      // Draw solid white connector from center node to rotation node (like corner lines)
+      // Draw solid white connector from center node to rotation node (with reduced opacity)
       ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.63)'; // 0.9 * 0.7 = 0.63 for 70% of original
+      ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(pivot.x, pivot.y);
       ctx.lineTo(rotationHandle.x, rotationHandle.y);
       ctx.stroke();
 
-      // Draw a dotted circle at the radius from center to rotation node
+      // Draw a dotted circle at the radius from center to rotation node (with reduced opacity)
       const circleRadius = Math.hypot(rotationHandle.x - pivot.x, rotationHandle.y - pivot.y);
-      ctx.strokeStyle = '#9ca3af';
-      ctx.lineWidth = 3.5;
-      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(156, 163, 175, 0.7)'; // 70% opacity for gray dotted circle
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash([6 * zoomCompensation, 6 * zoomCompensation]);
       ctx.beginPath();
       ctx.arc(pivot.x, pivot.y, circleRadius, 0, Math.PI * 2);
       ctx.stroke();
@@ -21038,10 +21438,16 @@
         ctx.save();
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? '#3b82f6' : fillColor;
+        // Apply 70% opacity only to fill, not stroke
+        if (isActive) {
+          ctx.fillStyle = '#3b82f6'; // Active fill (blue) at full opacity
+        } else {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // White fill at 70% opacity
+        }
         ctx.fill();
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = strokeColor;
+        // Blue stroke always at full opacity
+        ctx.lineWidth = 3 * zoomCompensation;
+        ctx.strokeStyle = strokeColor; // Full opacity blue stroke
         ctx.stroke();
         ctx.restore();
       };
@@ -21078,13 +21484,14 @@
       moveOverlayCanvas.style.objectFit = 'cover';
       moveOverlayCanvas.style.pointerEvents = 'none';
       moveOverlayCanvas.style.zIndex = '9';
+      moveOverlayCanvas.style.transition = 'none'; // Prevent animation on zoom
       moveOverlayCtx = moveOverlayCanvas.getContext('2d');
       container.style.position = 'relative';
       container.appendChild(moveOverlayCanvas);
       // Ensure overlay exactly matches the base canvas transform at creation time
       try {
         const cs = window.getComputedStyle(canvas);
-        moveOverlayCanvas.style.transformOrigin = cs.transformOrigin || 'top left';
+        moveOverlayCanvas.style.transformOrigin = cs.transformOrigin || 'center center';
         moveOverlayCanvas.style.transform = cs.transform || 'none';
       } catch (_e) {}
       // Immediately re-compose base canvas without the selected image so no shadow remains on first move
@@ -23026,6 +23433,10 @@
           } else {
             showCopyPasteFeedback('No frame copied. Right-click and select "Copy Frame" first.');
           }
+        }
+        else if ((e.key === 'd' || e.key === 'D') && e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          duplicateSelectedImageObjectWithShortcut();
         }
         // Handle undo (Cmd+Z or Ctrl+Z)
         else if ((e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
