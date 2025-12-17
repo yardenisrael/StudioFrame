@@ -2886,7 +2886,21 @@
               </div>
             </div>
             <div class="mb-4">
-              <div class="text-xs text-gray-400 mb-2">Timeline Ruler</div>
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-xs text-gray-400">Timeline Ruler</div>
+                <!-- Ease In/Out Controls -->
+                <div id="cutout-ease-controls" class="flex items-center gap-3" style="opacity: 0.5; pointer-events: none;">
+                  <div id="cutout-ease-key" title="Easing Keyframe Indicator" style="width:12px; height:12px; background:#6b7280; transform:rotate(45deg); border:1px solid #3b3b3b; flex-shrink:0; transition: background 0.2s, box-shadow 0.2s;"></div>
+                  <div class="flex items-center gap-2">
+                    <div style="color:#9ca3af; font-size:11px; white-space:nowrap;">Ease In</div>
+                    <div id="cutout-ease-in" style="min-width:50px; padding:3px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace; font-size:12px; color:#e5e7eb; background:#000000; border:1px solid #111; border-radius:4px; text-align:center; cursor:ew-resize;">0.00</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div style="color:#9ca3af; font-size:11px; white-space:nowrap;">Ease Out</div>
+                    <div id="cutout-ease-out" style="min-width:50px; padding:3px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace; font-size:12px; color:#e5e7eb; background:#000000; border:1px solid #111; border-radius:4px; text-align:center; cursor:ew-resize;">0.00</div>
+                  </div>
+                </div>
+              </div>
               <div id="cutout-timeline" class="relative bg-[#1a1a1a] border border-[#2a2a2a] rounded p-2" style="height: 60px; overflow: visible;">
                 <!-- Timecode (left) -->
                 <div id="cutout-timecode" class="absolute top-0 bottom-0 flex items-center justify-center text-gray-300 select-none" style="left: 0; width: 128px; font-size: 22px; line-height: 1; letter-spacing: 0.5px; font-weight: 700; font-family: 'Courier New', Courier, Menlo, Monaco, monospace; font-variant-numeric: tabular-nums;">
@@ -3340,7 +3354,8 @@
       position: [], // { time, x, y }
       zoom: [],     // { time, sx, sy }
       rotation: [], // { time, deg }
-      opacity: []   // { time, value }
+      opacity: [],  // { time, value }
+      mesh: []      // { time, nodes } - for grid warp keyframes
     };
     // Drag state for property key diamonds on the timeline
     let isDraggingPropKey = false;
@@ -3374,6 +3389,13 @@
     let cutoutStartTimeAtPlay = 0;
     let isCutoutDragging = false;
     let cutoutPlayStartTs = 0;
+    // Mesh warp/grid deformation state
+    let meshWarpActiveObjectId = null; // ID of object currently being mesh-warped
+    let meshWarpOverlayCanvas = null;
+    let meshWarpOverlayCtx = null;
+    let meshWarpGridSize = 4; // 4x4 grid of control points
+    let meshWarpDraggingNode = null; // { row, col, offsetX, offsetY }
+    let meshWarpNodes = null; // Current working copy of mesh nodes being dragged
     // Cutout drawing state and timeline clips
     let isCutoutDrawing = false;
     let lastCutoutX = 0;
@@ -3913,6 +3935,14 @@
       // Initialize recorder button style: paused/armed (grey)
       const rb = document.getElementById('cutout-rec-btn');
       if (rb) { rb.style.background = '#6b7280'; rb.style.boxShadow = '0 0 6px rgba(0,0,0,0.35)'; }
+      // Initialize ease in/out control drags
+      if (typeof initEaseControlDrags === 'function') {
+        try { initEaseControlDrags(); } catch (_e) {}
+      }
+      // Update ease controls state initially
+      if (typeof updateEaseControlsState === 'function') {
+        try { updateEaseControlsState(); } catch (_e) {}
+      }
       // Picture Board listeners
       const boardBody = document.getElementById('cutout-board-body');
       if (boardBody && !boardBody.dataset.boardDndBound) {
@@ -4320,6 +4350,10 @@
       if (cutoutBonesOverlayCanvas) {
         cutoutBonesOverlayCanvas.style.display = 'none';
       }
+      // Hide mesh warp overlay during playback - grid should only be visible during editing
+      if (typeof meshWarpOverlayCanvas !== 'undefined' && meshWarpOverlayCanvas) {
+        meshWarpOverlayCanvas.style.display = 'none';
+      }
       // Ensure any active/pending selection is committed before playback
       try {
         if (typeof cutoutSelectedObject !== 'undefined' && cutoutSelectedObject) {
@@ -4364,6 +4398,16 @@
         // Update bone positions based on current time keyframes
         updateCutoutBonePositionsFromKeyframes();
         drawCutoutBonesOverlay();
+      }
+      // Show mesh warp overlay when paused if mesh warp is active
+      if (typeof meshWarpOverlayCanvas !== 'undefined' && meshWarpOverlayCanvas && 
+          typeof meshWarpActiveObjectId !== 'undefined' && meshWarpActiveObjectId !== null) {
+        meshWarpOverlayCanvas.style.display = '';
+        // Re-render overlay for current state
+        const activeObj = typeof getMeshWarpActiveObject === 'function' ? getMeshWarpActiveObject() : null;
+        if (activeObj && typeof renderMeshWarpOverlay === 'function') {
+          renderMeshWarpOverlay(activeObj);
+        }
       }
       const btn = document.getElementById('cutout-play-btn');
       if (btn) btn.textContent = 'Play';
@@ -4637,6 +4681,8 @@
       addSet('zoom', cutoutPropertyKeys.zoom);
       addSet('rotation', cutoutPropertyKeys.rotation);
       addSet('opacity', cutoutPropertyKeys.opacity);
+      // Also include mesh warp keyframes in the timeline ruler display
+      addSet('mesh', cutoutPropertyKeys.mesh);
       Array.from(timeMap.entries()).forEach(([time, ref]) => {
         drawCombinedMarker(time, ref.prop, ref.key, activeColor);
       });
@@ -4740,10 +4786,15 @@
             rotation: Number.isFinite(obj.rotation) ? obj.rotation : 0,
             opacity: Number.isFinite(obj.opacity) ? obj.opacity : 1,
             drawW: obj.drawW,
-            drawH: obj.drawH
+            drawH: obj.drawH,
+            // Include mesh warp data for deformation rendering
+            id: obj.id,
+            meshNodes: obj.meshNodes,
+            keys: obj.keys
           };
           // Apply keyframed transforms at time t if available (use object-local keys only)
-          const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [] };
+          // Easing is stored per keyframe, so no need to pass object-level ease values
+          const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
           const pos = sampleKeyframes(keys.position, t, (a, b, alpha) => ({
             x: lerp(a.x, b.x, alpha),
             y: lerp(a.y, b.y, alpha)
@@ -4816,8 +4867,8 @@
               // When hasPositionKeyframes is true AND not actively manipulating, the keyframed values are used (already set above)
             }
           } catch (_boneErr) {}
-          // Composite animated object
-          drawRotatedImage(cutoutCtx, drawObj);
+          // Composite animated object - pass time t for correct mesh warp interpolation
+          drawRotatedImage(cutoutCtx, drawObj, 1, 1, 0, 0, t);
         }
         // Apply effects assigned to this clip
         if (typeof applyCutoutClipEffects === 'function') applyCutoutClipEffects(c);
@@ -5375,7 +5426,7 @@
                     drawW: segCrop.width, drawH: segCrop.height,
                 isImage: true,
                 // Start fresh keys to avoid inheriting any previous zoom/rotation animation
-                keys: { position: [], zoom: [], rotation: [], opacity: [] }
+                keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
                   };
                   if (!Array.isArray(clip.objects)) clip.objects = [];
                   clip.objects.push(newObj);
@@ -5433,7 +5484,7 @@
                   scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: hitImage.opacity || 1,
                   drawW: segCrop.width, drawH: segCrop.height,
                 isImage: true,
-                keys: { position: [], zoom: [], rotation: [], opacity: [] }
+                keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
                 };
                 if (!Array.isArray(clip.objects)) clip.objects = [];
                 clip.objects.push(newObj);
@@ -5610,7 +5661,7 @@
             cutoutPendingKeys = null;
             cutoutPendingColor = null;
             // Bind timeline keys to object
-            cutoutPropertyKeys = picked.keys || (picked.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+            cutoutPropertyKeys = picked.keys || (picked.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
             // Build overlay for handles
             cutoutBeginSelectionOverlay();
             updateCutoutPositionDisplay(picked.x, picked.y);
@@ -5693,7 +5744,7 @@
           opacity: 1,
           drawW: cropped.width,
           drawH: cropped.height,
-          keys: { position: [], zoom: [], rotation: [], opacity: [] }
+          keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
         };
         clip.objects.push(newObj);
         cutoutActiveObject = newObj;
@@ -5893,7 +5944,7 @@
             obj.keys.opacity = mergeArr(obj.keys.opacity || [], cutoutPendingKeys.opacity, 'opacity') || obj.keys.opacity;
           }
           cutoutActiveObject = obj;
-          cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+          cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
           // No re-seeding keys for existing object here
         } else {
           const color = cutoutPendingColor || cutoutObjectPalette[clip.objects.length % cutoutObjectPalette.length];
@@ -5918,7 +5969,7 @@
             pivotLocalX: (typeof cutoutSelectedObject.pivotLocalX === 'number') ? cutoutSelectedObject.pivotLocalX : undefined,
             pivotLocalY: (typeof cutoutSelectedObject.pivotLocalY === 'number') ? cutoutSelectedObject.pivotLocalY : undefined,
             rotationHandleDistance: (typeof cutoutSelectedObject.rotationHandleDistance === 'number') ? cutoutSelectedObject.rotationHandleDistance : undefined,
-            keys: (cutoutPendingKeys && cutoutPendingSelection) ? cutoutPendingKeys : { position: [], zoom: [], rotation: [], opacity: [] }
+            keys: (cutoutPendingKeys && cutoutPendingSelection) ? cutoutPendingKeys : { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
           };
           clip.objects.push(newObj);
           cutoutActiveObject = newObj;
@@ -6068,7 +6119,7 @@
             if (typeof renderCutoutLayersPanel === 'function') renderCutoutLayersPanel();
           }
           cutoutActiveObject = obj;
-          cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+          cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
           // Set selection to the object for transform overlay
           cutoutSelectedObject = obj;
           cutoutBeginSelectionOverlay();
@@ -6092,11 +6143,797 @@
         label.textContent = obj.name || `Object ${obj.id || '?'}`;
         label.style.fontSize = '12px';
         label.style.color = '#e5e7eb';
+        label.style.flex = '1';
+        // Mesh warp grid button
+        const meshBtn = document.createElement('button');
+        meshBtn.className = 'mesh-warp-btn';
+        meshBtn.title = 'Mesh Warp Grid';
+        meshBtn.style.width = '22px';
+        meshBtn.style.height = '22px';
+        meshBtn.style.padding = '0';
+        meshBtn.style.border = (meshWarpActiveObjectId === obj.id) ? '1px solid #6366f1' : '1px solid #3a3a3a';
+        meshBtn.style.borderRadius = '4px';
+        meshBtn.style.background = (meshWarpActiveObjectId === obj.id) ? '#6366f1' : 'transparent';
+        meshBtn.style.cursor = 'pointer';
+        meshBtn.style.display = 'flex';
+        meshBtn.style.alignItems = 'center';
+        meshBtn.style.justifyContent = 'center';
+        meshBtn.style.transition = 'all 0.15s ease';
+        meshBtn.style.flexShrink = '0';
+        meshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${(meshWarpActiveObjectId === obj.id) ? '#fff' : '#9ca3af'}" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="1"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="3" y1="15" x2="21" y2="15"/>
+          <line x1="9" y1="3" x2="9" y2="21"/>
+          <line x1="15" y1="3" x2="15" y2="21"/>
+        </svg>`;
+        meshBtn.addEventListener('mouseenter', () => {
+          if (meshWarpActiveObjectId !== obj.id) {
+            meshBtn.style.borderColor = '#6366f1';
+            meshBtn.style.background = 'rgba(99, 102, 241, 0.15)';
+          }
+        });
+        meshBtn.addEventListener('mouseleave', () => {
+          if (meshWarpActiveObjectId !== obj.id) {
+            meshBtn.style.borderColor = '#3a3a3a';
+            meshBtn.style.background = 'transparent';
+          }
+        });
+        meshBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleMeshWarpForObject(obj);
+        });
         row.appendChild(thumb);
         row.appendChild(label);
+        row.appendChild(meshBtn);
         list.appendChild(row);
       });
     }
+    
+    // ========== MESH WARP / GRID DEFORMATION ==========
+    
+    // Throttle mesh render for smooth performance
+    let meshWarpRenderRAF = null;
+    
+    // Get the base image dimensions for mesh grid (unscaled source image)
+    function getMeshImageDimensions(obj) {
+      if (!obj || !obj.img) return { w: 100, h: 100 };
+      const img = obj.img;
+      const w = img.naturalWidth || img.width || 100;
+      const h = img.naturalHeight || img.height || 100;
+      return { w, h };
+    }
+    
+    // Get the display dimensions for mesh grid (scaled for rendering)
+    function getMeshDisplayDimensions(obj) {
+      if (!obj) return { w: 100, h: 100 };
+      const base = getMeshImageDimensions(obj);
+      const scaleX = (typeof obj.scaleX === 'number') ? obj.scaleX : 1;
+      const scaleY = (typeof obj.scaleY === 'number') ? obj.scaleY : 1;
+      const scale = obj.scale || 1;
+      return {
+        w: base.w * scale * scaleX,
+        h: base.h * scale * scaleY
+      };
+    }
+    
+    // Initialize default mesh grid for an object (normalized 0-1 coordinates)
+    function initMeshWarpGrid(obj) {
+      const gridSize = meshWarpGridSize;
+      const nodes = [];
+      for (let row = 0; row <= gridSize; row++) {
+        nodes[row] = [];
+        for (let col = 0; col <= gridSize; col++) {
+          // Store as normalized coordinates (0-1 range)
+          nodes[row][col] = {
+            nx: col / gridSize,
+            ny: row / gridSize
+          };
+        }
+      }
+      return nodes;
+    }
+    
+    // Convert normalized mesh to display coordinates
+    function meshToDisplayCoords(nodes, obj) {
+      if (!nodes || !obj) return null;
+      const dims = getMeshDisplayDimensions(obj);
+      const result = [];
+      for (let row = 0; row < nodes.length; row++) {
+        result[row] = [];
+        for (let col = 0; col < nodes[row].length; col++) {
+          const n = nodes[row][col];
+          result[row][col] = {
+            x: n.nx * dims.w,
+            y: n.ny * dims.h
+          };
+        }
+      }
+      return result;
+    }
+    
+    // Convert display coordinates to normalized mesh
+    function displayToMeshCoords(displayNodes, obj) {
+      if (!displayNodes || !obj) return null;
+      const dims = getMeshDisplayDimensions(obj);
+      const result = [];
+      for (let row = 0; row < displayNodes.length; row++) {
+        result[row] = [];
+        for (let col = 0; col < displayNodes[row].length; col++) {
+          const n = displayNodes[row][col];
+          result[row][col] = {
+            nx: dims.w > 0 ? n.x / dims.w : 0,
+            ny: dims.h > 0 ? n.y / dims.h : 0
+          };
+        }
+      }
+      return result;
+    }
+    
+    // Get or create mesh nodes for an object
+    function getObjectMeshNodes(obj) {
+      if (!obj) return null;
+      if (!obj.meshNodes) {
+        obj.meshNodes = initMeshWarpGrid(obj);
+      }
+      return obj.meshNodes;
+    }
+    
+    // Toggle mesh warp mode for an object
+    function toggleMeshWarpForObject(obj) {
+      if (!obj || !obj.id) return;
+      
+      if (meshWarpActiveObjectId === obj.id) {
+        // Deactivate mesh warp
+        hideMeshWarpOverlay();
+        meshWarpActiveObjectId = null;
+        // Final render
+        renderCutoutPreviewForTime();
+      } else {
+        // Activate mesh warp for this object
+        // First commit any existing selection
+        try { cutoutCommitSelection(); } catch (_e) {}
+        
+        meshWarpActiveObjectId = obj.id;
+        // Initialize mesh nodes if not already present
+        if (!obj.meshNodes) {
+          obj.meshNodes = initMeshWarpGrid(obj);
+        }
+        // Initialize keyframes array if not present
+        if (!obj.keys) obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
+        if (!obj.keys.mesh) obj.keys.mesh = [];
+        
+        showMeshWarpOverlay(obj);
+      }
+      // Refresh objects list to update button highlight
+      if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList();
+    }
+    
+    // Show mesh warp overlay on the canvas
+    function showMeshWarpOverlay(obj) {
+      if (!cutoutCanvas || !obj) return;
+      
+      const container = document.getElementById('cutout-canvas-container');
+      if (!container) return;
+      
+      // Remove existing overlay
+      if (meshWarpOverlayCanvas) {
+        meshWarpOverlayCanvas.remove();
+      }
+      
+      // Create overlay canvas
+      meshWarpOverlayCanvas = document.createElement('canvas');
+      meshWarpOverlayCanvas.width = cutoutCanvas.width;
+      meshWarpOverlayCanvas.height = cutoutCanvas.height;
+      meshWarpOverlayCanvas.style.position = 'absolute';
+      meshWarpOverlayCanvas.style.top = '0';
+      meshWarpOverlayCanvas.style.left = '0';
+      meshWarpOverlayCanvas.style.width = '100%';
+      meshWarpOverlayCanvas.style.height = '100%';
+      meshWarpOverlayCanvas.style.pointerEvents = 'auto';
+      meshWarpOverlayCanvas.style.zIndex = '1005';
+      meshWarpOverlayCanvas.style.cursor = 'crosshair';
+      meshWarpOverlayCtx = meshWarpOverlayCanvas.getContext('2d');
+      
+      // Apply same zoom transform as main canvas
+      if (typeof applyCutoutZoomTransforms === 'function') {
+        const t = `scale(${cutoutZoomLevel})`;
+        const origin = cutoutZoomOriginPoint ? pointOriginToCss(cutoutZoomOriginPoint) : 'center center';
+        meshWarpOverlayCanvas.style.transformOrigin = origin;
+        meshWarpOverlayCanvas.style.transform = t;
+      }
+      
+      const cs = window.getComputedStyle(container);
+      if (cs.position === 'static') container.style.position = 'relative';
+      container.appendChild(meshWarpOverlayCanvas);
+      
+      // Add event listeners
+      meshWarpOverlayCanvas.addEventListener('mousedown', meshWarpMouseDown);
+      window.addEventListener('mousemove', meshWarpMouseMove);
+      window.addEventListener('mouseup', meshWarpMouseUp);
+      
+      // Render initial grid and preview
+      renderMeshWarpOverlay(obj);
+      renderCutoutPreviewForTime();
+    }
+    
+    // Hide mesh warp overlay
+    function hideMeshWarpOverlay() {
+      if (meshWarpRenderRAF) {
+        cancelAnimationFrame(meshWarpRenderRAF);
+        meshWarpRenderRAF = null;
+      }
+      if (meshWarpOverlayCanvas) {
+        meshWarpOverlayCanvas.removeEventListener('mousedown', meshWarpMouseDown);
+        window.removeEventListener('mousemove', meshWarpMouseMove);
+        window.removeEventListener('mouseup', meshWarpMouseUp);
+        meshWarpOverlayCanvas.remove();
+        meshWarpOverlayCanvas = null;
+        meshWarpOverlayCtx = null;
+      }
+      meshWarpDraggingNode = null;
+      meshWarpNodes = null;
+    }
+    
+    // Get active mesh warp object
+    function getMeshWarpActiveObject() {
+      if (meshWarpActiveObjectId == null) return null;
+      const idx = (typeof selectedCutoutClipIndex === 'number' && selectedCutoutClipIndex >= 0) 
+        ? selectedCutoutClipIndex 
+        : getActiveCutoutClipIndexAt(cutoutCurrentTime);
+      if (idx < 0) return null;
+      const clip = cutoutClips[idx];
+      if (!clip || !Array.isArray(clip.objects)) return null;
+      return clip.objects.find(o => o && o.id === meshWarpActiveObjectId) || null;
+    }
+    
+    // Convert canvas coords from mouse event
+    function meshWarpCanvasCoords(e) {
+      return cutoutCanvasCoords(e);
+    }
+    
+    // Find if mouse is over a mesh node (returns {row, col} or null)
+    function findMeshNodeAtPoint(obj, canvasX, canvasY) {
+      if (!obj || !obj.meshNodes) return null;
+      
+      const displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
+      if (!displayNodes) return null;
+      
+      const nodeRadius = 12; // Larger hit area for easier selection
+      const objX = obj.x || 0;
+      const objY = obj.y || 0;
+      
+      for (let row = 0; row <= meshWarpGridSize; row++) {
+        for (let col = 0; col <= meshWarpGridSize; col++) {
+          const node = displayNodes[row][col];
+          const nx = objX + node.x;
+          const ny = objY + node.y;
+          const dist = Math.hypot(canvasX - nx, canvasY - ny);
+          if (dist <= nodeRadius) {
+            return { row, col };
+          }
+        }
+      }
+      return null;
+    }
+    
+    // Mouse down on mesh overlay
+    function meshWarpMouseDown(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const obj = getMeshWarpActiveObject();
+      if (!obj) return;
+      
+      const coords = meshWarpCanvasCoords(e);
+      const nodeHit = findMeshNodeAtPoint(obj, coords.x, coords.y);
+      
+      if (nodeHit) {
+        // Save state before modification
+        try { saveState(); } catch (_e) {}
+        
+        const displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
+        const objX = obj.x || 0;
+        const objY = obj.y || 0;
+        const hitNode = displayNodes[nodeHit.row][nodeHit.col];
+        
+        // Start dragging this node
+        meshWarpDraggingNode = {
+          row: nodeHit.row,
+          col: nodeHit.col,
+          // Store offset from mouse to node center for smooth dragging
+          offsetX: (objX + hitNode.x) - coords.x,
+          offsetY: (objY + hitNode.y) - coords.y
+        };
+        
+        // Create working copy of display nodes for live editing
+        meshWarpNodes = JSON.parse(JSON.stringify(displayNodes));
+        
+        // Update cursor
+        if (meshWarpOverlayCanvas) {
+          meshWarpOverlayCanvas.style.cursor = 'grabbing';
+        }
+      }
+    }
+    
+    // Mouse move while dragging mesh node
+    function meshWarpMouseMove(e) {
+      const obj = getMeshWarpActiveObject();
+      if (!obj) return;
+      
+      // Update cursor based on hover
+      if (!meshWarpDraggingNode && meshWarpOverlayCanvas) {
+        const coords = meshWarpCanvasCoords(e);
+        const nodeHit = findMeshNodeAtPoint(obj, coords.x, coords.y);
+        meshWarpOverlayCanvas.style.cursor = nodeHit ? 'grab' : 'crosshair';
+      }
+      
+      if (!meshWarpDraggingNode || !meshWarpNodes) return;
+      
+      const coords = meshWarpCanvasCoords(e);
+      const { row, col, offsetX, offsetY } = meshWarpDraggingNode;
+      const objX = obj.x || 0;
+      const objY = obj.y || 0;
+      
+      // Calculate new node position (in display space, relative to object)
+      const newX = (coords.x + offsetX) - objX;
+      const newY = (coords.y + offsetY) - objY;
+      
+      // Update the node position in working copy
+      meshWarpNodes[row][col] = { x: newX, y: newY };
+      
+      // Schedule render update using RAF for smoothness
+      if (!meshWarpRenderRAF) {
+        meshWarpRenderRAF = requestAnimationFrame(() => {
+          meshWarpRenderRAF = null;
+          
+          const currentObj = getMeshWarpActiveObject();
+          if (!currentObj || !meshWarpNodes) return;
+          
+          // Convert display nodes back to normalized for storage
+          const normalizedNodes = displayToMeshCoords(meshWarpNodes, currentObj);
+          
+          // Temporarily apply mesh to object for rendering
+          const backup = currentObj.meshNodes;
+          currentObj.meshNodes = normalizedNodes;
+          
+          // Re-render overlay and preview
+          renderMeshWarpOverlay(currentObj);
+          renderCutoutPreviewForTime();
+          
+          // Restore backup (we'll apply permanently on mouse up)
+          currentObj.meshNodes = backup;
+        });
+      }
+    }
+    
+    // Mouse up - finish dragging
+    function meshWarpMouseUp(e) {
+      if (meshWarpRenderRAF) {
+        cancelAnimationFrame(meshWarpRenderRAF);
+        meshWarpRenderRAF = null;
+      }
+      
+      if (!meshWarpDraggingNode || !meshWarpNodes) {
+        meshWarpDraggingNode = null;
+        meshWarpNodes = null;
+        return;
+      }
+      
+      const obj = getMeshWarpActiveObject();
+      if (obj) {
+        // Convert final display nodes to normalized and apply permanently
+        const normalizedNodes = displayToMeshCoords(meshWarpNodes, obj);
+        obj.meshNodes = normalizedNodes;
+        
+        // Always add/update mesh keyframe at current time when nodes are changed
+        // This ensures mesh deformation is stored for animation/export
+        if (!obj.keys) obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
+        if (!obj.keys.mesh) obj.keys.mesh = [];
+        const t = cutoutCurrentTime || 0;
+        addMeshKeyframe(obj, t);
+        
+        // Update timeline ruler to show the new mesh keyframe diamond
+        try { drawCutoutTimeline(); updateRowKeyActiveStates(); } catch (_e) {}
+        
+        // Render final state
+        renderMeshWarpOverlay(obj);
+        renderCutoutPreviewForTime();
+        
+        // Save state after modification
+        try { saveState(); } catch (_e) {}
+      }
+      
+      // Reset cursor
+      if (meshWarpOverlayCanvas) {
+        meshWarpOverlayCanvas.style.cursor = 'crosshair';
+      }
+      
+      meshWarpDraggingNode = null;
+      meshWarpNodes = null;
+    }
+    
+    // Add or update a mesh keyframe
+    function addMeshKeyframe(obj, time) {
+      if (!obj || !obj.keys || !obj.meshNodes) return;
+      if (!obj.keys.mesh) obj.keys.mesh = [];
+      
+      const epsilon = 1 / 60;
+      
+      // NOTE: Removed auto-insertion of default keyframe at time=0
+      // This was causing mesh animations to be stretched because it created
+      // unwanted animation from time=0 to the user's first keyframe.
+      // Mesh keyframes should behave like other properties (position, zoom, etc.)
+      // where the first keyframe's value is used for all times before it.
+      
+      const existingIdx = obj.keys.mesh.findIndex(k => Math.abs(k.time - time) <= epsilon);
+      
+      // Deep clone mesh nodes
+      const meshSnapshot = JSON.parse(JSON.stringify(obj.meshNodes));
+      
+      if (existingIdx >= 0) {
+        obj.keys.mesh[existingIdx] = { time, nodes: meshSnapshot };
+      } else {
+        obj.keys.mesh.push({ time, nodes: meshSnapshot });
+        obj.keys.mesh.sort((a, b) => a.time - b.time);
+      }
+    }
+    
+    // Interpolate mesh nodes between two keyframes
+    function interpolateMeshNodes(mesh1, mesh2, t) {
+      if (!mesh1 || !mesh2) return mesh1 || mesh2;
+      
+      const result = [];
+      for (let row = 0; row < mesh1.length; row++) {
+        result[row] = [];
+        for (let col = 0; col < mesh1[row].length; col++) {
+          const n1 = mesh1[row][col];
+          const n2 = mesh2[row][col];
+          result[row][col] = {
+            nx: n1.nx + (n2.nx - n1.nx) * t,
+            ny: n1.ny + (n2.ny - n1.ny) * t
+          };
+        }
+      }
+      return result;
+    }
+    
+    // Get interpolated mesh at current time
+    // NOTE: This function now behaves consistently with sampleKeyframes for other properties:
+    // - If time is before first keyframe, return first keyframe's mesh (no interpolation from default)
+    // - If time is after last keyframe, return last keyframe's mesh
+    // - Otherwise interpolate between surrounding keyframes
+    // This prevents unwanted "animation from default" that was causing 2x stretched exports
+    function getInterpolatedMeshAtTime(obj, time) {
+      if (!obj || !obj.keys || !obj.keys.mesh || obj.keys.mesh.length === 0) {
+        return obj ? obj.meshNodes : null;
+      }
+      
+      const meshKeys = obj.keys.mesh;
+      
+      // Find surrounding keyframes
+      let prev = null, next = null;
+      for (let i = 0; i < meshKeys.length; i++) {
+        if (meshKeys[i].time <= time) prev = meshKeys[i];
+        if (meshKeys[i].time >= time && !next) next = meshKeys[i];
+      }
+      
+      // If time is BEFORE the first keyframe, return the first keyframe's mesh directly
+      // This is consistent with how other properties (position, zoom, rotation, opacity) work
+      // in sampleKeyframes() - they don't interpolate from a default value before the first key
+      if (!prev && next) {
+        return next.nodes;
+      }
+      
+      // If time is AFTER the last keyframe, return the last keyframe's mesh
+      if (prev && !next) return prev.nodes;
+      
+      // No keyframes at all
+      if (!prev && !next) return obj.meshNodes;
+      
+      // Exactly on a keyframe
+      if (prev === next) return prev.nodes;
+      
+      // Interpolate between prev and next keyframes
+      const range = next.time - prev.time;
+      const t = range > 0 ? (time - prev.time) / range : 0;
+      return interpolateMeshNodes(prev.nodes, next.nodes, t);
+    }
+    
+    // Render mesh warp overlay (grid lines and control nodes)
+    function renderMeshWarpOverlay(obj) {
+      if (!meshWarpOverlayCtx || !meshWarpOverlayCanvas || !obj) return;
+      
+      const ctx = meshWarpOverlayCtx;
+      const w = meshWarpOverlayCanvas.width;
+      const h = meshWarpOverlayCanvas.height;
+      ctx.clearRect(0, 0, w, h);
+      
+      // Get display nodes (use working copy if dragging)
+      let displayNodes;
+      if (meshWarpNodes) {
+        displayNodes = meshWarpNodes;
+      } else if (obj.meshNodes) {
+        displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
+      }
+      if (!displayNodes) return;
+      
+      const objX = obj.x || 0;
+      const objY = obj.y || 0;
+      
+      // Draw semi-transparent overlay on object area
+      ctx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(objX + displayNodes[0][0].x, objY + displayNodes[0][0].y);
+      for (let col = 1; col <= meshWarpGridSize; col++) {
+        ctx.lineTo(objX + displayNodes[0][col].x, objY + displayNodes[0][col].y);
+      }
+      for (let row = 1; row <= meshWarpGridSize; row++) {
+        ctx.lineTo(objX + displayNodes[row][meshWarpGridSize].x, objY + displayNodes[row][meshWarpGridSize].y);
+      }
+      for (let col = meshWarpGridSize - 1; col >= 0; col--) {
+        ctx.lineTo(objX + displayNodes[meshWarpGridSize][col].x, objY + displayNodes[meshWarpGridSize][col].y);
+      }
+      for (let row = meshWarpGridSize - 1; row >= 0; row--) {
+        ctx.lineTo(objX + displayNodes[row][0].x, objY + displayNodes[row][0].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw grid lines with anti-aliasing
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Horizontal lines
+      for (let row = 0; row <= meshWarpGridSize; row++) {
+        ctx.beginPath();
+        ctx.moveTo(objX + displayNodes[row][0].x, objY + displayNodes[row][0].y);
+        for (let col = 1; col <= meshWarpGridSize; col++) {
+          ctx.lineTo(objX + displayNodes[row][col].x, objY + displayNodes[row][col].y);
+        }
+        ctx.stroke();
+      }
+      
+      // Vertical lines
+      for (let col = 0; col <= meshWarpGridSize; col++) {
+        ctx.beginPath();
+        ctx.moveTo(objX + displayNodes[0][col].x, objY + displayNodes[0][col].y);
+        for (let row = 1; row <= meshWarpGridSize; row++) {
+          ctx.lineTo(objX + displayNodes[row][col].x, objY + displayNodes[row][col].y);
+        }
+        ctx.stroke();
+      }
+      
+      // Draw control nodes
+      for (let row = 0; row <= meshWarpGridSize; row++) {
+        for (let col = 0; col <= meshWarpGridSize; col++) {
+          const node = displayNodes[row][col];
+          const nx = objX + node.x;
+          const ny = objY + node.y;
+          
+          // Highlight dragging node
+          const isDragging = meshWarpDraggingNode && 
+            meshWarpDraggingNode.row === row && 
+            meshWarpDraggingNode.col === col;
+          
+          // Corner nodes larger, edge nodes medium, internal nodes smaller
+          const isCorner = (row === 0 || row === meshWarpGridSize) && 
+                          (col === 0 || col === meshWarpGridSize);
+          const isEdge = (row === 0 || row === meshWarpGridSize || 
+                         col === 0 || col === meshWarpGridSize);
+          
+          const radius = isDragging ? 10 : (isCorner ? 7 : (isEdge ? 6 : 5));
+          
+          // Draw glow for dragging node
+          if (isDragging) {
+            ctx.beginPath();
+            ctx.arc(nx, ny, radius + 4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
+            ctx.fill();
+          }
+          
+          // Draw node circle
+          ctx.beginPath();
+          ctx.arc(nx, ny, radius, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? '#fff' : (isCorner ? '#6366f1' : '#818cf8');
+          ctx.fill();
+          ctx.strokeStyle = isDragging ? '#6366f1' : '#312e81';
+          ctx.lineWidth = isDragging ? 2.5 : 1.5;
+          ctx.stroke();
+        }
+      }
+    }
+    
+    // Apply mesh warp deformation to draw the image
+    // Uses subdivision and bilinear interpolation for smooth warping
+    function drawMeshWarpedImage(ctx, obj, meshNodes, offsetX = 0, offsetY = 0) {
+      if (!ctx || !obj || !obj.img || !meshNodes) return;
+      
+      const img = obj.img;
+      const imgW = img.naturalWidth || img.width || 0;
+      const imgH = img.naturalHeight || img.height || 0;
+      if (imgW === 0 || imgH === 0) return;
+      
+      // Convert normalized mesh to display coordinates
+      const displayNodes = meshToDisplayCoords(meshNodes, obj);
+      if (!displayNodes) return;
+      
+      const objX = (obj.x || 0) + offsetX;
+      const objY = (obj.y || 0) + offsetY;
+      const opacity = (typeof obj.opacity === 'number') ? obj.opacity : 1;
+      
+      ctx.save();
+      ctx.globalAlpha *= opacity;
+      
+      const gridSize = meshWarpGridSize;
+      const cellW = imgW / gridSize;
+      const cellH = imgH / gridSize;
+      
+      // Draw each cell of the grid as a warped quadrilateral
+      for (let row = 0; row < gridSize; row++) {
+        for (let col = 0; col < gridSize; col++) {
+          // Source rectangle in original image
+          const srcX = col * cellW;
+          const srcY = row * cellH;
+          
+          // Destination quad corners (from display mesh nodes)
+          const tl = displayNodes[row][col];
+          const tr = displayNodes[row][col + 1];
+          const br = displayNodes[row + 1][col + 1];
+          const bl = displayNodes[row + 1][col];
+          
+          // Draw this cell using subdivision for smooth warping
+          drawWarpedQuad(ctx, img, 
+            srcX, srcY, cellW, cellH,
+            objX + tl.x, objY + tl.y,
+            objX + tr.x, objY + tr.y,
+            objX + br.x, objY + br.y,
+            objX + bl.x, objY + bl.y
+          );
+        }
+      }
+      
+      ctx.restore();
+    }
+    
+    // Draw a warped quadrilateral using subdivision for smoother results
+    function drawWarpedQuad(ctx, img, srcX, srcY, srcW, srcH, x0, y0, x1, y1, x2, y2, x3, y3) {
+      // Use more subdivisions for smoother warping
+      const subdivisions = 3;
+      const subW = srcW / subdivisions;
+      const subH = srcH / subdivisions;
+      
+      // Bilinear interpolation function
+      const lerp2d = (u, v) => {
+        // Interpolate top edge
+        const topX = x0 + (x1 - x0) * u;
+        const topY = y0 + (y1 - y0) * u;
+        // Interpolate bottom edge
+        const botX = x3 + (x2 - x3) * u;
+        const botY = y3 + (y2 - y3) * u;
+        // Interpolate between top and bottom
+        return { 
+          x: topX + (botX - topX) * v, 
+          y: topY + (botY - topY) * v 
+        };
+      };
+      
+      for (let sy = 0; sy < subdivisions; sy++) {
+        for (let sx = 0; sx < subdivisions; sx++) {
+          const u0 = sx / subdivisions;
+          const v0 = sy / subdivisions;
+          const u1 = (sx + 1) / subdivisions;
+          const v1 = (sy + 1) / subdivisions;
+          
+          const p0 = lerp2d(u0, v0);
+          const p1 = lerp2d(u1, v0);
+          const p2 = lerp2d(u1, v1);
+          const p3 = lerp2d(u0, v1);
+          
+          // Source sub-rectangle
+          const subSrcX = srcX + sx * subW;
+          const subSrcY = srcY + sy * subH;
+          
+          // Draw two triangles for this sub-quad
+          // Triangle 1: top-left, top-right, bottom-right
+          drawTexturedTriangle(ctx, img,
+            subSrcX, subSrcY,
+            subSrcX + subW, subSrcY,
+            subSrcX + subW, subSrcY + subH,
+            p0.x, p0.y, p1.x, p1.y, p2.x, p2.y
+          );
+          
+          // Triangle 2: top-left, bottom-right, bottom-left
+          drawTexturedTriangle(ctx, img,
+            subSrcX, subSrcY,
+            subSrcX + subW, subSrcY + subH,
+            subSrcX, subSrcY + subH,
+            p0.x, p0.y, p2.x, p2.y, p3.x, p3.y
+          );
+        }
+      }
+    }
+    
+    // Draw a textured triangle using affine transform
+    function drawTexturedTriangle(ctx, img, 
+      srcX0, srcY0, srcX1, srcY1, srcX2, srcY2,
+      dstX0, dstY0, dstX1, dstY1, dstX2, dstY2) {
+      
+      ctx.save();
+      
+      // Create clipping path
+      ctx.beginPath();
+      ctx.moveTo(dstX0, dstY0);
+      ctx.lineTo(dstX1, dstY1);
+      ctx.lineTo(dstX2, dstY2);
+      ctx.closePath();
+      ctx.clip();
+      
+      // Calculate affine transform matrix to map source triangle to destination
+      // Using the formula for 2D affine transformation
+      const denom = (srcX0 - srcX2) * (srcY1 - srcY2) - (srcX1 - srcX2) * (srcY0 - srcY2);
+      
+      if (Math.abs(denom) < 1e-10) {
+        ctx.restore();
+        return;
+      }
+      
+      // Transform matrix components
+      const a = ((dstX0 - dstX2) * (srcY1 - srcY2) - (dstX1 - dstX2) * (srcY0 - srcY2)) / denom;
+      const b = ((srcX0 - srcX2) * (dstX1 - dstX2) - (srcX1 - srcX2) * (dstX0 - dstX2)) / denom;
+      const c = dstX0 - a * srcX0 - b * srcY0;
+      const d = ((dstY0 - dstY2) * (srcY1 - srcY2) - (dstY1 - dstY2) * (srcY0 - srcY2)) / denom;
+      const e = ((srcX0 - srcX2) * (dstY1 - dstY2) - (srcX1 - srcX2) * (dstY0 - dstY2)) / denom;
+      const f = dstY0 - d * srcX0 - e * srcY0;
+      
+      // Apply transform and draw
+      ctx.transform(a, d, b, e, c, f);
+      ctx.drawImage(img, 0, 0);
+      
+      ctx.restore();
+    }
+    
+    // Check if object has non-trivial mesh (any node moved from default)
+    function objectHasActiveMesh(obj) {
+      if (!obj || !obj.meshNodes) return false;
+      
+      const threshold = 0.001; // Normalized threshold
+      
+      for (let row = 0; row <= meshWarpGridSize; row++) {
+        for (let col = 0; col <= meshWarpGridSize; col++) {
+          const node = obj.meshNodes[row][col];
+          const defaultNx = col / meshWarpGridSize;
+          const defaultNy = row / meshWarpGridSize;
+          if (Math.abs(node.nx - defaultNx) > threshold || 
+              Math.abs(node.ny - defaultNy) > threshold) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    
+    // Get the effective mesh for rendering (handles dragging state and keyframe interpolation)
+    function getEffectiveMeshForObject(obj, time) {
+      if (!obj) return null;
+      
+      // If this is the active mesh warp object and we're dragging, use the working copy
+      if (meshWarpActiveObjectId === obj.id && meshWarpNodes) {
+        return displayToMeshCoords(meshWarpNodes, obj);
+      }
+      
+      // Check for keyframe interpolation
+      if (obj.keys && obj.keys.mesh && obj.keys.mesh.length > 0) {
+        return getInterpolatedMeshAtTime(obj, time);
+      }
+      
+      // Return stored mesh or null
+      return obj.meshNodes || null;
+    }
+    
+    // ========== END MESH WARP ==========
     
     // Merge two objects within the same clip by baking their bitmaps and keys.
     // The resulting object retains the lower id; the higher id object is removed.
@@ -6174,8 +7011,8 @@
         }
         return out;
       };
-      const aKeys = keep.keys || (keep.keys = { position: [], zoom: [], rotation: [], opacity: [] });
-      const bKeys = drop.keys || { position: [], zoom: [], rotation: [], opacity: [] };
+      const aKeys = keep.keys || (keep.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
+      const bKeys = drop.keys || { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
       aKeys.position = joinKeys(aKeys.position, bKeys.position, 'position');
       aKeys.zoom = joinKeys(aKeys.zoom, bKeys.zoom, 'zoom');
       aKeys.rotation = joinKeys(aKeys.rotation, bKeys.rotation, 'rotation');
@@ -6206,7 +7043,7 @@
       // Update selection to merged object
       cutoutActiveObject = keep;
       cutoutSelectedObject = keep;
-      cutoutPropertyKeys = keep.keys || (keep.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+      cutoutPropertyKeys = keep.keys || (keep.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
       if (typeof cutoutBeginSelectionOverlay === 'function') cutoutBeginSelectionOverlay();
       if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList();
       drawCutoutTimeline && drawCutoutTimeline();
@@ -6315,7 +7152,7 @@
               cutoutActiveLayerIndex = obj.layerIndex;
             }
             cutoutActiveObject = obj;
-            cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+            cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
             cutoutSelectedObject = obj;
             try { cutoutBeginSelectionOverlay(); } catch (_e) {}
             try {
@@ -6590,6 +7427,7 @@
       pushIfMatch('zoom');
       pushIfMatch('rotation');
       pushIfMatch('opacity');
+      pushIfMatch('mesh');
       dragPropKey = {
         group,
         startMouseX: e.clientX,
@@ -6659,6 +7497,13 @@
       return cutoutPropertyKeys[prop];
     }
     function extendActiveCutoutClipToTime(timeSec) {
+      // DISABLED: No longer auto-extend clips when keyframes are created
+      // This was causing clips to extend beyond their intended duration when users
+      // created keyframes at times beyond the clip's end.
+      // Users should explicitly resize clips if they want to extend them.
+      // 
+      // To re-enable clip auto-extension, uncomment the code below:
+      /*
       // Prefer explicitly selected clip; otherwise, active at current time
       let idx = (typeof selectedCutoutClipIndex === 'number' && selectedCutoutClipIndex >= 0)
         ? selectedCutoutClipIndex
@@ -6682,6 +7527,7 @@
         const minStart = prev ? Math.min(clip.end - epsilon, prev.end + epsilon) : 0;
         clip.start = Math.max(minStart, Math.min(clip.start, Math.max(0, timeSec - epsilon)));
       }
+      */
     }
     function addOrUpdatePropKeyAt(prop, time, values, targetKeys) {
       // targetKeys allows specifying a different keys object (for parent objects in bone chains)
@@ -6822,20 +7668,259 @@
       setActive('cutout-zoom-key', hasKeyAtTime('zoom', t));
       setActive('cutout-rot-key', hasKeyAtTime('rotation', t));
       setActive('cutout-opa-key', hasKeyAtTime('opacity', t));
+      // Also update ease controls state
+      updateEaseControlsState();
     }
+    
+    // Ease In/Out control logic
+    // Returns the keyframe at current time (if scrubber is on a keyframe), along with its index
+    function getCurrentKeyframeAtTime() {
+      const t = Math.max(0, Math.min(cutoutDuration, cutoutCurrentTime || 0));
+      const epsilon = 1 / 60; // ~1 frame at 60fps
+      const keys = cutoutPropertyKeys || {};
+      
+      // Check all property types for a keyframe at current time
+      // Return the first match along with its property type and index
+      const props = ['position', 'zoom', 'rotation', 'opacity', 'mesh'];
+      for (const prop of props) {
+        const arr = keys[prop];
+        if (!arr || !Array.isArray(arr)) continue;
+        for (let i = 0; i < arr.length; i++) {
+          if (Math.abs(arr[i].time - t) <= epsilon) {
+            return { keyframe: arr[i], prop, index: i, isFirstKeyframe: i === 0 };
+          }
+        }
+      }
+      return null;
+    }
+    
+    // Check if we're on a keyframe that can have easing (not the first keyframe)
+    function isOnEditableKeyframe() {
+      const result = getCurrentKeyframeAtTime();
+      return result && !result.isFirstKeyframe;
+    }
+    
+    // Get the color of the current keyframe (from the object)
+    function getCurrentKeyframeColor() {
+      if (!cutoutSelectedObject) return '#6b7280';
+      return cutoutSelectedObject.color || '#6366f1';
+    }
+    
+    function hasAnimationKeyframes() {
+      // Returns true if any property has 2+ keyframes (indicating animation)
+      const keys = cutoutPropertyKeys || {};
+      if (keys.position && Array.isArray(keys.position) && keys.position.length >= 2) return true;
+      if (keys.zoom && Array.isArray(keys.zoom) && keys.zoom.length >= 2) return true;
+      if (keys.rotation && Array.isArray(keys.rotation) && keys.rotation.length >= 2) return true;
+      if (keys.opacity && Array.isArray(keys.opacity) && keys.opacity.length >= 2) return true;
+      if (keys.mesh && Array.isArray(keys.mesh) && keys.mesh.length >= 2) return true;
+      return false;
+    }
+    
+    function updateEaseControlsState() {
+      const controls = document.getElementById('cutout-ease-controls');
+      const keyIcon = document.getElementById('cutout-ease-key');
+      const easeInEl = document.getElementById('cutout-ease-in');
+      const easeOutEl = document.getElementById('cutout-ease-out');
+      if (!controls) return;
+      
+      const hasAnimation = hasAnimationKeyframes();
+      const onKeyframe = isOnEditableKeyframe();
+      const keyframeInfo = getCurrentKeyframeAtTime();
+      
+      // Enable controls only when on a keyframe (not the first one) and animation exists
+      if (hasAnimation && onKeyframe) {
+        controls.style.opacity = '1';
+        controls.style.pointerEvents = 'auto';
+      } else {
+        controls.style.opacity = '0.5';
+        controls.style.pointerEvents = 'none';
+      }
+      
+      // Update keyframe icon color based on current keyframe
+      if (keyIcon) {
+        if (onKeyframe) {
+          const color = getCurrentKeyframeColor();
+          keyIcon.style.background = color;
+          keyIcon.style.boxShadow = `0 0 8px ${color}80`;
+        } else if (hasAnimation) {
+          // Animation exists but not on a keyframe - show dimmed indicator
+          keyIcon.style.background = '#4b5563';
+          keyIcon.style.boxShadow = 'none';
+        } else {
+          keyIcon.style.background = '#6b7280';
+          keyIcon.style.boxShadow = 'none';
+        }
+      }
+      
+      // Update displayed values from the current keyframe (stored per keyframe)
+      if (keyframeInfo && keyframeInfo.keyframe) {
+        const easeIn = typeof keyframeInfo.keyframe.easeIn === 'number' ? keyframeInfo.keyframe.easeIn : 0;
+        const easeOut = typeof keyframeInfo.keyframe.easeOut === 'number' ? keyframeInfo.keyframe.easeOut : 0;
+        if (easeInEl) easeInEl.textContent = easeIn.toFixed(2);
+        if (easeOutEl) easeOutEl.textContent = easeOut.toFixed(2);
+      } else {
+        if (easeInEl) easeInEl.textContent = '0.00';
+        if (easeOutEl) easeOutEl.textContent = '0.00';
+      }
+    }
+    
+    function updateEaseDisplay(easeIn, easeOut) {
+      const easeInEl = document.getElementById('cutout-ease-in');
+      const easeOutEl = document.getElementById('cutout-ease-out');
+      if (easeInEl) easeInEl.textContent = Number.isFinite(easeIn) ? easeIn.toFixed(2) : '0.00';
+      if (easeOutEl) easeOutEl.textContent = Number.isFinite(easeOut) ? easeOut.toFixed(2) : '0.00';
+    }
+    
+    function applyEasing(t, easeIn, easeOut) {
+      // Apply combined ease in and ease out curve
+      // easeIn: 0 = linear start, higher = slower start (power curve)
+      // easeOut: 0 = linear end, higher = slower end (power curve)
+      // Uses a modified bezier-style curve blending ease in and ease out
+      if (!Number.isFinite(easeIn)) easeIn = 0;
+      if (!Number.isFinite(easeOut)) easeOut = 0;
+      
+      // Clamp values to reasonable range
+      easeIn = Math.max(0, Math.min(5, easeIn));
+      easeOut = Math.max(0, Math.min(5, easeOut));
+      
+      if (easeIn === 0 && easeOut === 0) return t; // Linear
+      
+      // Use power-based easing for smooth control
+      // Ease in: t^(1 + easeIn) makes start slower
+      // Ease out: 1 - (1-t)^(1 + easeOut) makes end slower
+      // Blend them based on relative strengths
+      
+      if (easeIn > 0 && easeOut === 0) {
+        // Pure ease in
+        return Math.pow(t, 1 + easeIn);
+      } else if (easeOut > 0 && easeIn === 0) {
+        // Pure ease out  
+        return 1 - Math.pow(1 - t, 1 + easeOut);
+      } else {
+        // Combined ease in and ease out
+        // Use smooth step blending
+        const inCurve = Math.pow(t, 1 + easeIn);
+        const outCurve = 1 - Math.pow(1 - t, 1 + easeOut);
+        // Blend using a smooth transition
+        const blend = t * t * (3 - 2 * t); // Hermite blend
+        return lerp(inCurve, outCurve, blend);
+      }
+    }
+    
+    function initEaseControlDrags() {
+      const easeInEl = document.getElementById('cutout-ease-in');
+      const easeOutEl = document.getElementById('cutout-ease-out');
+      
+      function setupEaseDrag(el, prop) {
+        if (!el) return;
+        let startX = 0;
+        let startVal = 0;
+        let targetKeyframe = null;
+        
+        const onMove = (e) => {
+          const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const dx = clientX - startX;
+          const newVal = Math.max(0, Math.min(5, startVal + dx * 0.02));
+          if (targetKeyframe) {
+            targetKeyframe[prop] = newVal;
+            updateEaseDisplay(targetKeyframe.easeIn || 0, targetKeyframe.easeOut || 0);
+            // Re-render preview to show easing effect
+            if (typeof scheduleCutoutPreviewForTime === 'function') {
+              try { scheduleCutoutPreviewForTime(); } catch (_e) {}
+            }
+          }
+        };
+        
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onUp);
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+          targetKeyframe = null;
+          // Save state after drag ends
+          if (typeof saveState === 'function') {
+            try { saveState(); } catch (_e) {}
+          }
+        };
+        
+        el.addEventListener('mousedown', (e) => {
+          if (!isOnEditableKeyframe()) return;
+          const keyframeInfo = getCurrentKeyframeAtTime();
+          if (!keyframeInfo || !keyframeInfo.keyframe) return;
+          e.preventDefault();
+          targetKeyframe = keyframeInfo.keyframe;
+          startX = e.clientX;
+          startVal = typeof targetKeyframe[prop] === 'number' ? targetKeyframe[prop] : 0;
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = 'ew-resize';
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+        
+        el.addEventListener('touchstart', (e) => {
+          if (!isOnEditableKeyframe()) return;
+          const keyframeInfo = getCurrentKeyframeAtTime();
+          if (!keyframeInfo || !keyframeInfo.keyframe) return;
+          if (e.touches.length !== 1) return;
+          e.preventDefault();
+          targetKeyframe = keyframeInfo.keyframe;
+          startX = e.touches[0].clientX;
+          startVal = typeof targetKeyframe[prop] === 'number' ? targetKeyframe[prop] : 0;
+          document.addEventListener('touchmove', onMove, { passive: false });
+          document.addEventListener('touchend', onUp);
+        }, { passive: false });
+        
+        // Double-click to reset or enter value
+        el.addEventListener('dblclick', () => {
+          if (!isOnEditableKeyframe()) return;
+          const keyframeInfo = getCurrentKeyframeAtTime();
+          if (!keyframeInfo || !keyframeInfo.keyframe) return;
+          const kf = keyframeInfo.keyframe;
+          const current = typeof kf[prop] === 'number' ? kf[prop] : 0;
+          const input = prompt(`Enter ${prop === 'easeIn' ? 'Ease In' : 'Ease Out'} value (0-5):`, current.toFixed(2));
+          if (input === null) return;
+          const val = parseFloat(input);
+          if (!Number.isFinite(val)) return;
+          kf[prop] = Math.max(0, Math.min(5, val));
+          updateEaseDisplay(kf.easeIn || 0, kf.easeOut || 0);
+          if (typeof scheduleCutoutPreviewForTime === 'function') {
+            try { scheduleCutoutPreviewForTime(); } catch (_e) {}
+          }
+          if (typeof saveState === 'function') {
+            try { saveState(); } catch (_e) {}
+          }
+        });
+      }
+      
+      setupEaseDrag(easeInEl, 'easeIn');
+      setupEaseDrag(easeOutEl, 'easeOut');
+    }
+    
     function lerp(a, b, t) { return a + (b - a) * t; }
     function shortestAngleDeg(from, to) {
       let delta = ((to - from + 540) % 360) - 180;
       return from + delta;
     }
-    function sampleKeyframes(arr, t, getter) {
+    function sampleKeyframes(arr, t, getter, fallbackEaseIn, fallbackEaseOut) {
+      // Easing is now stored per keyframe on the target keyframe (b)
+      // fallbackEaseIn/fallbackEaseOut are optional fallback values if keyframe doesn't have easing
       if (!arr || arr.length === 0) return null;
       if (t <= arr[0].time) return getter(arr[0], arr[0], 0);
       if (t >= arr[arr.length - 1].time) return getter(arr[arr.length - 1], arr[arr.length - 1], 1);
       for (let i = 0; i < arr.length - 1; i++) {
         const a = arr[i], b = arr[i + 1];
         if (t >= a.time && t <= b.time) {
-          const alpha = (t - a.time) / (b.time - a.time);
+          let alpha = (t - a.time) / (b.time - a.time);
+          // Get easing from the target keyframe (b) - this is where easing is stored
+          const easeIn = typeof b.easeIn === 'number' ? b.easeIn : (fallbackEaseIn || 0);
+          const easeOut = typeof b.easeOut === 'number' ? b.easeOut : (fallbackEaseOut || 0);
+          // Apply easing if any
+          if ((easeIn > 0 || easeOut > 0) && typeof applyEasing === 'function') {
+            alpha = applyEasing(alpha, easeIn, easeOut);
+          }
           return getter(a, b, alpha);
         }
       }
@@ -6844,6 +7929,7 @@
     function applyCutoutKeyframedTransformsAtTime() {
       if (!cutoutSelectedObject) return;
       const t = Math.max(0, Math.min(cutoutDuration, cutoutCurrentTime || 0));
+      // Easing is now stored per keyframe, so no need to pass object-level ease values
       // Position
       const pos = sampleKeyframes(cutoutPropertyKeys.position, t, (a, b, alpha) => ({
         x: lerp(a.x, b.x, alpha),
@@ -6979,7 +8065,7 @@
             if (hitTop && hitTop !== cutoutSelectedObject) {
               cutoutSelectedObject = hitTop;
               cutoutActiveObject = hitTop;
-              cutoutPropertyKeys = hitTop.keys || (hitTop.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+              cutoutPropertyKeys = hitTop.keys || (hitTop.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
               try { cutoutBeginSelectionOverlay(); } catch (_e) {}
               if (typeof updateCutoutPositionDisplay === 'function') updateCutoutPositionDisplay(hitTop.x, hitTop.y);
               if (typeof updateCutoutZoomDisplay === 'function') updateCutoutZoomDisplay(hitTop.scaleX || 1, hitTop.scaleY || 1);
@@ -7003,7 +8089,7 @@
                   if (clone) {
                     cutoutSelectedObject = clone;
                     cutoutActiveObject = clone;
-                    cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+                    cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
                     try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
                   }
                 }
@@ -7048,7 +8134,7 @@
             e.stopPropagation();
             cutoutSelectedObject = hit;
             cutoutActiveObject = hit;
-            cutoutPropertyKeys = hit.keys || (hit.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+            cutoutPropertyKeys = hit.keys || (hit.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
             // Start overlay and update UI readouts
             try {
               if (!cutoutMoveOverlayCanvas) {
@@ -7106,7 +8192,7 @@
                 if (clone) {
                   cutoutSelectedObject = clone;
                   cutoutActiveObject = clone;
-                  cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+                  cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
                   // Start dragging right away so "option+drag to duplicate" works on first interaction
                   cutoutIsDraggingObj = true;
                   imageDragOffsetX = x - clone.x;
@@ -7269,7 +8355,7 @@
             if (clone) {
               cutoutSelectedObject = clone;
               cutoutActiveObject = clone;
-              cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+              cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
               try { if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList(); } catch (_e) {}
             }
           }
@@ -8392,7 +9478,7 @@
               // Select this clip (visual highlight) and bind its keys to this object without changing time or canvas state
               selectedCutoutClipIndex = idx;
               cutoutActiveObject = o;
-              cutoutPropertyKeys = o.keys || (o.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+              cutoutPropertyKeys = o.keys || (o.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
               // Clear any pending selection override so timeline reflects the chosen object's keys/color
               cutoutPendingSelection = false;
               cutoutPendingKeys = null;
@@ -8570,11 +9656,47 @@
         : (e && e.changedTouches && e.changedTouches[0])
           ? e.changedTouches[0]
           : e;
+      const clientX = point && typeof point.clientX === 'number' ? point.clientX : 0;
+      const clientY = point && typeof point.clientY === 'number' ? point.clientY : 0;
+      
+      // Use container-based calculation for better precision when zoomed
+      const container = cutoutCanvas.parentElement;
+      if (container && cutoutZoomLevel > 1.0) {
+        const containerRect = container.getBoundingClientRect();
+        const canvasW = cutoutCanvas.width;
+        const canvasH = cutoutCanvas.height;
+        
+        // Calculate the unscaled display size of the canvas
+        const unscaledDisplayW = containerRect.width;
+        const unscaledDisplayH = containerRect.height;
+        
+        // Get transform origin in pixels (percentage of unscaled display size)
+        const originX = cutoutZoomOriginPoint ? (cutoutZoomOriginPoint.x / 100) * unscaledDisplayW : unscaledDisplayW / 2;
+        const originY = cutoutZoomOriginPoint ? (cutoutZoomOriginPoint.y / 100) * unscaledDisplayH : unscaledDisplayH / 2;
+        
+        // Mouse position relative to container
+        const mouseContainerX = clientX - containerRect.left;
+        const mouseContainerY = clientY - containerRect.top;
+        
+        // Reverse the CSS scale transform to get position in unscaled space
+        // The transform-origin is the fixed point during scaling
+        const unscaledX = originX + (mouseContainerX - originX) / cutoutZoomLevel;
+        const unscaledY = originY + (mouseContainerY - originY) / cutoutZoomLevel;
+        
+        // Convert from display coordinates to canvas coordinates
+        const displayToCanvasX = canvasW / unscaledDisplayW;
+        const displayToCanvasY = canvasH / unscaledDisplayH;
+        
+        return { 
+          x: unscaledX * displayToCanvasX, 
+          y: unscaledY * displayToCanvasY 
+        };
+      }
+      
+      // Fallback to standard calculation when not zoomed (zoom level 1.0)
       const rect = cutoutCanvas.getBoundingClientRect();
       const scaleX = cutoutCanvas.width / rect.width;
       const scaleY = cutoutCanvas.height / rect.height;
-      const clientX = point && typeof point.clientX === 'number' ? point.clientX : 0;
-      const clientY = point && typeof point.clientY === 'number' ? point.clientY : 0;
       return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
     }
     
@@ -8867,7 +9989,7 @@
           opacity: 1,
           drawW,
           drawH,
-          keys: { position: [], zoom: [], rotation: [], opacity: [] },
+          keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] },
           isImage: true
         };
         try { saveState(); } catch (_e) {}
@@ -9111,7 +10233,7 @@
         opacity: 1,
         drawW: cloned.width,
         drawH: cloned.height,
-        keys: { position: [], zoom: [], rotation: [], opacity: [] }
+        keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
       };
       clip.objects.push(newObj);
       cutoutActiveObject = newObj;
@@ -9307,13 +10429,14 @@
             if (isPointInsideSelectedObject(obj, x, y)) {
               cutoutActiveObject = obj;
               cutoutSelectedObject = obj;
-              cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+              cutoutPropertyKeys = obj.keys || (obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
               cutoutBeginSelectionOverlay();
               updateCutoutPositionDisplay(obj.x, obj.y);
               updateCutoutZoomDisplay(obj.scaleX || 1, obj.scaleY || 1);
               const deg = ((obj.rotation || 0) * 180) / Math.PI;
               updateCutoutRotationDisplay(deg);
               updateCutoutOpacityDisplay((typeof obj.opacity === 'number') ? obj.opacity : 1);
+              if (typeof updateEaseControlsState === 'function') updateEaseControlsState();
               return;
             }
           }
@@ -9351,7 +10474,7 @@
               cutoutSelectedObject = b.objectRef;
               cutoutActiveObject = b.objectRef;
               if (!b.objectRef.keys) {
-                b.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                b.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
               }
               cutoutPropertyKeys = b.objectRef.keys;
               // Clear any pending parent keys from previous rotation
@@ -9401,7 +10524,7 @@
               cutoutSelectedObject = bSync.objectRef;
               cutoutActiveObject = bSync.objectRef;
               if (!bSync.objectRef.keys) {
-                bSync.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                bSync.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
               }
               cutoutPropertyKeys = bSync.objectRef.keys;
             }
@@ -9488,7 +10611,7 @@
               cutoutSelectedObject = obj;
               cutoutActiveObject = obj;
               if (!obj.keys) {
-                obj.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
               }
               cutoutPropertyKeys = obj.keys;
               cutoutBonesModeObjDrag = {
@@ -9757,7 +10880,7 @@
                 // Record keyframes for parent object
                 if (cutoutRecorderArmed) {
                   if (!parentObj.keys) {
-                    parentObj.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                    parentObj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
                   }
                   let parentEntry = cutoutPendingParentKeys.find(e => e.objectRef === parentObj);
                   if (!parentEntry) {
@@ -10122,7 +11245,7 @@
                 if (!entry.objectRef) continue;
                 // Ensure the parent object has a keys structure
                 if (!entry.objectRef.keys) {
-                  entry.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                  entry.objectRef.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
                 }
                 // Use addOrUpdatePropKeyAt so bone state gets stored with position keyframes
                 if (entry.position) {
@@ -10181,7 +11304,7 @@
                   if (n.objectRef && !committedObjs.has(n.objectRef)) {
                     committedObjs.add(n.objectRef);
                     const obj = n.objectRef;
-                    if (!obj.keys) obj.keys = { position: [], zoom: [], rotation: [], opacity: [] };
+                    if (!obj.keys) obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
                     // Position keyframe (will include bone state)
                     addOrUpdatePropKeyAt('position', cutoutCurrentTime, { x: obj.x, y: obj.y }, obj.keys);
                     // Rotation keyframe
@@ -12336,6 +13459,11 @@
       rm('film-overlay');
       if (typeof disableAnalogHorrorEffect === 'function') disableAnalogHorrorEffect();
       rm('analog-overlay');
+      // Cleanup mesh warp overlay
+      if (typeof hideMeshWarpOverlay === 'function') {
+        try { hideMeshWarpOverlay(); } catch (_e) {}
+      }
+      meshWarpActiveObjectId = null;
     }
 
     // Replace Magic Effects list when entering/leaving Cut Out mode
@@ -13334,11 +14462,14 @@
                 pivotLocalX: (typeof o.pivotLocalX === 'number') ? o.pivotLocalX : undefined,
                 pivotLocalY: (typeof o.pivotLocalY === 'number') ? o.pivotLocalY : undefined,
                 rotationHandleDistance: (typeof o.rotationHandleDistance === 'number') ? o.rotationHandleDistance : undefined,
+                // Mesh warp data
+                meshNodes: o.meshNodes ? JSON.parse(JSON.stringify(o.meshNodes)) : undefined,
                 keys: {
                   position: Array.isArray(o.keys && o.keys.position) ? o.keys.position.map(k => ({ time: k.time, x: k.x, y: k.y })) : [],
                   zoom: Array.isArray(o.keys && o.keys.zoom) ? o.keys.zoom.map(k => ({ time: k.time, sx: k.sx, sy: k.sy })) : [],
                   rotation: Array.isArray(o.keys && o.keys.rotation) ? o.keys.rotation.map(k => ({ time: k.time, deg: k.deg })) : [],
-                  opacity: Array.isArray(o.keys && o.keys.opacity) ? o.keys.opacity.map(k => ({ time: k.time, value: k.value })) : []
+                  opacity: Array.isArray(o.keys && o.keys.opacity) ? o.keys.opacity.map(k => ({ time: k.time, value: k.value })) : [],
+                  mesh: Array.isArray(o.keys && o.keys.mesh) ? o.keys.mesh.map(k => ({ time: k.time, nodes: JSON.parse(JSON.stringify(k.nodes)) })) : []
                 }
               })) : [];
               return {
@@ -13662,13 +14793,16 @@
                       position: Array.isArray(o.keys && o.keys.position) ? o.keys.position.map(k => ({ time: k.time, x: k.x, y: k.y })) : [],
                       zoom: Array.isArray(o.keys && o.keys.zoom) ? o.keys.zoom.map(k => ({ time: k.time, sx: k.sx, sy: k.sy })) : [],
                       rotation: Array.isArray(o.keys && o.keys.rotation) ? o.keys.rotation.map(k => ({ time: k.time, deg: k.deg })) : [],
-                      opacity: Array.isArray(o.keys && o.keys.opacity) ? o.keys.opacity.map(k => ({ time: k.time, value: k.value })) : []
+                      opacity: Array.isArray(o.keys && o.keys.opacity) ? o.keys.opacity.map(k => ({ time: k.time, value: k.value })) : [],
+                      mesh: Array.isArray(o.keys && o.keys.mesh) ? o.keys.mesh.map(k => ({ time: k.time, nodes: JSON.parse(JSON.stringify(k.nodes)) })) : []
                     }
                   };
                   // Restore pivot and rotation handle properties if present (prevents memory buildup)
                   if (typeof o.pivotLocalX === 'number') baseObj.pivotLocalX = o.pivotLocalX;
                   if (typeof o.pivotLocalY === 'number') baseObj.pivotLocalY = o.pivotLocalY;
                   if (typeof o.rotationHandleDistance === 'number') baseObj.rotationHandleDistance = o.rotationHandleDistance;
+                  // Restore mesh warp nodes if present
+                  if (o.meshNodes) baseObj.meshNodes = JSON.parse(JSON.stringify(o.meshNodes));
                   oimg.onload = () => {
                     if (typeof renderCutoutPreviewForTime === 'function') renderCutoutPreviewForTime();
                   };
@@ -13745,6 +14879,68 @@
         isResizingImage = false;
         isRotatingImage = false;
         activeTransformHandle = null;
+      } catch (_e) {}
+      
+      // Clear Cut Out mode selection/lasso overlays for consistent undo behavior
+      try {
+        // Clear magic lasso state
+        if (typeof isMagicLassoActive !== 'undefined') isMagicLassoActive = false;
+        if (typeof magicLassoPoints !== 'undefined') magicLassoPoints = [];
+        if (typeof magicLassoMode !== 'undefined') magicLassoMode = null;
+        
+        // Clear cutout bone lasso state
+        if (typeof cutoutIsBoneLassoActive !== 'undefined') cutoutIsBoneLassoActive = false;
+        if (typeof cutoutBoneLassoPoints !== 'undefined') cutoutBoneLassoPoints = [];
+        
+        // Use the proper cancel function to tear down overlay and event listeners
+        if (typeof cutoutCancelSelectionOverlay === 'function') {
+          try { cutoutCancelSelectionOverlay(); } catch (_e2) {}
+        } else {
+          // Fallback: manual cleanup if function not available
+          if (typeof cutoutMoveOverlayCanvas !== 'undefined' && cutoutMoveOverlayCanvas) {
+            try { cutoutMoveOverlayCanvas.remove(); } catch (_e2) {}
+            cutoutMoveOverlayCanvas = null;
+            cutoutMoveOverlayCtx = null;
+          }
+          if (typeof cutoutSelectedObject !== 'undefined') cutoutSelectedObject = null;
+        }
+        
+        // Clear cutout active object reference (so switching tools doesn't re-commit)
+        if (typeof cutoutActiveObject !== 'undefined') cutoutActiveObject = null;
+        if (typeof cutoutPendingSelection !== 'undefined') cutoutPendingSelection = false;
+        if (typeof cutoutPendingKeys !== 'undefined') cutoutPendingKeys = null;
+        if (typeof cutoutPendingColor !== 'undefined') cutoutPendingColor = null;
+        
+        // Clear cutout drag state
+        if (typeof isCutoutDraggingObj !== 'undefined') isCutoutDraggingObj = false;
+        if (typeof isCutoutResizingObj !== 'undefined') isCutoutResizingObj = false;
+        if (typeof isCutoutRotatingObj !== 'undefined') isCutoutRotatingObj = false;
+        if (typeof cutoutResizeCorner !== 'undefined') cutoutResizeCorner = '';
+        
+        // Clear cutout bone drag state
+        if (typeof cutoutIsDraggingBoneHandle !== 'undefined') cutoutIsDraggingBoneHandle = false;
+        if (typeof cutoutIsRotatingBone !== 'undefined') cutoutIsRotatingBone = false;
+        if (typeof cutoutBoneDrag !== 'undefined') cutoutBoneDrag = null;
+        if (typeof cutoutBoneRotationData !== 'undefined') cutoutBoneRotationData = null;
+        
+        // Clear the drawing state to prevent stale strokes
+        if (typeof isCutoutDrawing !== 'undefined') isCutoutDrawing = false;
+        
+        // Clear mesh warp overlay state
+        if (typeof hideMeshWarpOverlay === 'function') {
+          try { hideMeshWarpOverlay(); } catch (_e2) {}
+        }
+        if (typeof meshWarpActiveObjectId !== 'undefined') meshWarpActiveObjectId = null;
+        if (typeof meshWarpDraggingNode !== 'undefined') meshWarpDraggingNode = null;
+        if (typeof meshWarpNodes !== 'undefined') meshWarpNodes = null;
+        
+        // Refresh cutout UI after clearing selection
+        if (typeof renderCutoutObjectsList === 'function') {
+          try { renderCutoutObjectsList(); } catch (_e2) {}
+        }
+        if (typeof renderCutoutLayersPanel === 'function') {
+          try { renderCutoutLayersPanel(); } catch (_e2) {}
+        }
       } catch (_e) {}
     }
 
@@ -16320,7 +17516,7 @@
           if (!clone) return false;
           cutoutSelectedObject = clone;
           cutoutActiveObject = clone;
-          cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [] });
+          cutoutPropertyKeys = clone.keys || (clone.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] });
           try { if (typeof cutoutBeginSelectionOverlay === 'function') cutoutBeginSelectionOverlay(); } catch (_e) {}
           try { if (typeof updateCutoutPositionDisplay === 'function') updateCutoutPositionDisplay(clone.x, clone.y); } catch (_e) {}
           try { if (typeof updateCutoutZoomDisplay === 'function') updateCutoutZoomDisplay(clone.scaleX || 1, clone.scaleY || 1); } catch (_e) {}
@@ -18513,7 +19709,7 @@
         if (!bone || bone.clipIndex !== activeClip || !bone.objectRef) continue;
         
         const obj = bone.objectRef;
-        const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [] };
+        const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
         const posKeys = keys.position || [];
         
         if (posKeys.length === 0) continue;
@@ -18569,7 +19765,8 @@
         if (!bone || !bone.objectRef) return;
         
         const obj = bone.objectRef;
-        const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [] };
+        const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
+        // Easing is stored per keyframe, so no need to pass object-level ease values
         
         // Sample position keyframes
         let objX = obj.x, objY = obj.y;
@@ -19079,7 +20276,7 @@
                 scale: 1, scaleX: 1, scaleY: 1,
                 rotation: 0, opacity: 1,
                 drawW: cw, drawH: ch,
-                keys: { position: [], zoom: [], rotation: [], opacity: [] }
+                keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
               };
               clip.objects.push(newObj);
               cutoutActiveObject = newObj;
@@ -19172,7 +20369,7 @@
             scale: 1, scaleX: 1, scaleY: 1,
             rotation: 0, opacity: 1,
             drawW: cropped.width, drawH: cropped.height,
-            keys: { position: [], zoom: [], rotation: [], opacity: [] }
+            keys: { position: [], zoom: [], rotation: [], opacity: [], mesh: [] }
           };
           clip.objects.push(newObj);
           cutoutActiveObject = newObj;
@@ -20438,7 +21635,28 @@
       return (localX >= obj.x && localX <= obj.x + w && localY >= obj.y && localY <= obj.y + h);
     }
 
-    function drawRotatedImage(ctx, obj, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
+    function drawRotatedImage(ctx, obj, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0, renderTime = null) {
+      // Check for mesh warp - if object has mesh nodes, use mesh warping
+      const hasMesh = obj && (obj.meshNodes || (obj.keys && obj.keys.mesh && obj.keys.mesh.length > 0));
+      if (hasMesh && typeof drawMeshWarpedImage === 'function' && typeof getEffectiveMeshForObject === 'function') {
+        // Get the effective mesh (handles dragging, keyframe interpolation, etc.)
+        // Use provided renderTime for export, or fall back to cutoutCurrentTime for preview
+        const meshTime = (renderTime !== null && typeof renderTime === 'number') 
+          ? renderTime 
+          : (typeof cutoutCurrentTime === 'number' ? cutoutCurrentTime : 0);
+        const meshNodes = getEffectiveMeshForObject(obj, meshTime);
+        
+        if (meshNodes && typeof objectHasActiveMesh === 'function') {
+          // Check if mesh is actually deformed (not just default)
+          const tempObj = Object.assign({}, obj, { meshNodes: meshNodes });
+          if (objectHasActiveMesh(tempObj)) {
+            drawMeshWarpedImage(ctx, obj, meshNodes, offsetX, offsetY);
+            return;
+          }
+        }
+      }
+      
+      // Standard drawing (no mesh warp)
       const baseW = (obj && obj.drawW != null) ? obj.drawW : ((obj && obj.img && (obj.img.naturalWidth || obj.img.width || obj.img.videoWidth)) || 0);
       const baseH = (obj && obj.drawH != null) ? obj.drawH : ((obj && obj.img && (obj.img.naturalHeight || obj.img.height || obj.img.videoHeight)) || 0);
       const effScaleX = (obj && typeof obj.scaleX === 'number' ? obj.scaleX : 1) * scaleX;
@@ -22904,6 +24122,9 @@
         
         for (const obj of objects) {
           if (!obj || !obj.img) continue;
+          const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
+          // Ensure mesh keyframes array exists
+          if (!keys.mesh) keys.mesh = [];
           const drawObj = {
             img: obj.img, src: obj.src,
             x: (Number.isFinite(obj.x) ? obj.x : 0) * scaleX,
@@ -22914,9 +24135,13 @@
             rotation: Number.isFinite(obj.rotation) ? obj.rotation : 0,
             opacity: Number.isFinite(obj.opacity) ? obj.opacity : 1,
             drawW: obj.drawW ? obj.drawW * scaleX : undefined,
-            drawH: obj.drawH ? obj.drawH * scaleY : undefined
+            drawH: obj.drawH ? obj.drawH * scaleY : undefined,
+            // Include mesh warp data for deformation rendering in export
+            id: obj.id,
+            meshNodes: obj.meshNodes,
+            keys: keys
           };
-          const keys = (obj.keys && typeof obj.keys === 'object') ? obj.keys : { position: [], zoom: [], rotation: [], opacity: [] };
+          // Easing is stored per keyframe, so no need to pass object-level ease values
           try { 
             const pos = sampleKeyframes(keys.position, t, (a,b,aL)=>({ x: lerp(a.x,b.x,aL), y: lerp(a.y,b.y,aL) })); 
             if (pos) { drawObj.x = pos.x * scaleX; drawObj.y = pos.y * scaleY; } 
@@ -22933,7 +24158,8 @@
             const op = sampleKeyframes(keys.opacity, t, (a,b,aL)=>({ value: lerp(a.value,b.value,aL) })); 
             if (op) { drawObj.opacity = Math.max(0, Math.min(1, op.value)); } 
           } catch (_e) {}
-          try { drawRotatedImage(ctx, drawObj); } catch (_e) {}
+          // Pass the frame time t to drawRotatedImage for correct mesh warp interpolation during export
+          try { drawRotatedImage(ctx, drawObj, 1, 1, 0, 0, t); } catch (_e) {}
         }
         
         // Also try compositing from cutout-content-canvas overlay if present
@@ -22943,7 +24169,331 @@
             ctx.drawImage(cutoutOverlay, 0, 0, cutoutOverlay.width, cutoutOverlay.height, 0, 0, w, h);
           }
         } catch (_e) {}
+        
+        // Render magic effects for the clip at this time
+        try {
+          renderClipEffectsToContext(ctx, w, h, c, tSec);
+        } catch (_e) {}
+        
+        // Render transitions at this time
+        try {
+          renderTransitionToContext(ctx, w, h, tSec);
+        } catch (_e) {}
       } catch (_e) {}
+    }
+    
+    // Render transitions (brightness-flash, dip-to-color, etc.) to export context
+    function renderTransitionToContext(ctx, w, h, tSec) {
+      if (!Array.isArray(cutoutTransitions) || cutoutTransitions.length === 0) return;
+      
+      const active = cutoutTransitions.find(tr => tSec >= tr.start && tSec <= tr.end);
+      if (!active) return;
+      
+      const dur = Math.max(0.001, active.end - active.start);
+      const p = Math.max(0, Math.min(1, (tSec - active.start) / dur));
+      const easeInOut = (x) => (x < 0.5) ? (2*x*x) : (1 - Math.pow(-2*x + 2, 2)/2);
+      const q = easeInOut(p);
+      
+      ctx.save();
+      
+      switch (active.type) {
+        case 'brightness-flash': {
+          const a = Math.sin(q * Math.PI) * 0.6;
+          ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillRect(0, 0, w, h);
+          break;
+        }
+        case 'additive-resolve': {
+          const a = 0.25 * (1 - q);
+          ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillRect(0, 0, w, h);
+          break;
+        }
+        case 'dip-to-color': {
+          const a = (p < 0.5) ? (p * 2) : ((1 - p) * 2);
+          ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * a})`;
+          ctx.fillRect(0, 0, w, h);
+          break;
+        }
+        case 'vignette-transition': {
+          const strength = 0.7 * (p < 0.5 ? (p * 2) : (1 - p) * 2);
+          const gradient = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.7);
+          gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+          gradient.addColorStop(1, `rgba(0, 0, 0, ${strength})`);
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, w, h);
+          break;
+        }
+        // blur-dissolve and zoom-in-crash are CSS-only effects that can't be easily replicated
+        // in a static frame export - they would need the previous frame to blend with
+        default:
+          break;
+      }
+      
+      ctx.restore();
+    }
+    
+    // Render magic effects (snow, rain, oldTV, oldFilm, analogHorror) to an export context
+    // This function matches the exact rendering from the preview overlays
+    function renderClipEffectsToContext(ctx, w, h, clip, tSec) {
+      if (!clip || !Array.isArray(clip.effects) || clip.effects.length === 0) return;
+      
+      const effects = clip.effects;
+      
+      // Get effect settings (use defaults if not available)
+      const settings = (typeof effectSettings !== 'undefined') ? effectSettings : {
+        scanlines: { opacity: 0.5, pitch: 3 },
+        vignette: { strength: 0.6, inner: 0.56 },
+        grain: { intensity: 0.22 },
+        snow: { density: 1.0, size: 1.0, speed: 1.0, wind: 0 },
+        rain: { density: 1.0, length: 20, angle: 15, speed: 1.0, opacity: 0.6 },
+        oldFilm: { vignette: 0.5 }
+      };
+      
+      // Helper to render scanlines effect - matches preview exactly
+      const renderScanlines = () => {
+        const opacity = settings.scanlines?.opacity || 0.5;
+        const pitch = settings.scanlines?.pitch || 3;
+        ctx.save();
+        ctx.fillStyle = `rgba(0, 0, 0, ${opacity * 0.6})`;
+        for (let y = 0; y < h; y += pitch * 2) {
+          ctx.fillRect(0, y, w, pitch);
+        }
+        ctx.restore();
+      };
+      
+      // Helper to render vignette effect - matches preview gradient
+      const renderVignette = (strength = 0.6, inner = 0.56) => {
+        ctx.save();
+        const centerX = w / 2;
+        const centerY = h / 2;
+        const innerRadius = Math.min(w, h) * inner * 0.5;
+        const outerRadius = Math.max(w, h) * 0.85;
+        const gradient = ctx.createRadialGradient(centerX, centerY, innerRadius, centerX, centerY, outerRadius);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        gradient.addColorStop(0.5, `rgba(0, 0, 0, ${strength * 0.3})`);
+        gradient.addColorStop(1, `rgba(0, 0, 0, ${strength})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      };
+      
+      // Helper to render grain effect - matches preview tiled grain
+      const renderGrain = (intensity = 0.22) => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'overlay';
+        const tileSize = 144;
+        const off = document.createElement('canvas');
+        off.width = tileSize;
+        off.height = tileSize;
+        const octx = off.getContext('2d');
+        const imgData = octx.createImageData(tileSize, tileSize);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const v = Math.floor(Math.random() * 256);
+          const a = Math.floor(intensity * 255 * (0.5 + Math.random() * 0.5));
+          data[i] = v;
+          data[i + 1] = v;
+          data[i + 2] = v;
+          data[i + 3] = a;
+        }
+        octx.putImageData(imgData, 0, 0);
+        // Tile the grain pattern
+        const shiftX = Math.floor(Math.random() * tileSize);
+        const shiftY = Math.floor(Math.random() * tileSize);
+        const cols = Math.ceil(w / tileSize) + 1;
+        const rows = Math.ceil(h / tileSize) + 1;
+        for (let row = -1; row < rows; row++) {
+          for (let col = -1; col < cols; col++) {
+            ctx.drawImage(off, col * tileSize + shiftX, row * tileSize + shiftY);
+          }
+        }
+        ctx.restore();
+      };
+      
+      // Helper to render snow particles - matches preview exactly with glow and size distribution
+      const renderSnow = () => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const density = settings.snow?.density || 1.0;
+        const sizeMult = settings.snow?.size || 1.0;
+        const countBase = (w * h) / 9000;
+        const count = Math.max(24, Math.round(countBase * density * 1.3));
+        
+        for (let i = 0; i < count; i++) {
+          // Size distribution: many small, some medium, a few large (matches preview)
+          const u = Math.random();
+          let baseR = 1.0;
+          if (u < 0.65) {
+            baseR = 0.6 + Math.random() * 1.4; // small ~0.6-2.0
+          } else if (u < 0.95) {
+            baseR = 1.8 + Math.random() * 2.0; // medium ~1.8-3.8
+          } else {
+            baseR = 3.5 + Math.random() * 3.5; // large ~3.5-7.0
+          }
+          const r = Math.max(0.6, baseR * Math.max(0.5, sizeMult));
+          
+          // Per-particle tone: some pure white, some greyish (matches preview)
+          const whitePick = Math.random() < 0.5;
+          const shade = whitePick ? 255 : Math.round(180 + Math.random() * 55);
+          const alpha = whitePick ? (0.85 + Math.random() * 0.15) : (0.65 + Math.random() * 0.25);
+          
+          const x = Math.random() * w;
+          const y = Math.random() * h;
+          
+          // Draw with radial gradient glow (matches preview)
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+          gradient.addColorStop(0, `rgba(${shade},${shade},${shade},${alpha.toFixed(2)})`);
+          gradient.addColorStop(1, `rgba(${shade},${shade},${shade},0.0)`);
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      };
+      
+      // Helper to render rain drops - matches preview exactly
+      const renderRain = () => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.lineCap = 'round';
+        
+        const density = settings.rain?.density || 1.0;
+        const len = Math.max(6, settings.rain?.length || 20);
+        const angle = Math.max(-45, Math.min(45, settings.rain?.angle || 15));
+        const angleRad = (angle * Math.PI) / 180;
+        const opacity = Math.max(0.25, Math.min(1, settings.rain?.opacity || 0.6));
+        
+        const vx = Math.sin(angleRad);
+        const vy = Math.cos(angleRad);
+        
+        const countBase = (w * h) / 9000;
+        const count = Math.max(20, Math.round(countBase * density));
+        
+        for (let i = 0; i < count; i++) {
+          const sp = (1.2 + Math.random() * 1.6);
+          const dropVx = vx * sp * 6;
+          const dropVy = vy * sp * 12;
+          const dropLen = len * (0.8 + Math.random() * 0.6);
+          const dropAlpha = opacity * (0.8 + Math.random() * 0.2);
+          
+          const x = Math.random() * w;
+          const y = Math.random() * h;
+          
+          ctx.strokeStyle = `rgba(200, 220, 255, ${dropAlpha.toFixed(2)})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x - dropVx * 0.8, y - dropVy * 0.8 - dropLen);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+      
+      // Helper to apply color grade (sepia/vintage) - matches preview filters
+      const applyColorGrade = (type) => {
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          if (type === 'sepia') {
+            data[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+            data[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+            data[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+          } else if (type === 'vintage') {
+            // Warm vintage with slight desaturation
+            const avg = (r + g + b) / 3;
+            const mix = 0.3; // desaturation amount
+            data[i] = Math.min(255, (r * (1 - mix) + avg * mix) * 1.1 + 15);
+            data[i + 1] = Math.min(255, (g * (1 - mix) + avg * mix) * 0.95 + 5);
+            data[i + 2] = Math.min(255, (b * (1 - mix) + avg * mix) * 0.8);
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      };
+      
+      // Helper to render film scratches - matches old film effect
+      const renderFilmScratches = () => {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        const numScratches = Math.floor(Math.random() * 8) + 3;
+        for (let i = 0; i < numScratches; i++) {
+          const x = Math.random() * w;
+          const wobble = (Math.random() - 0.5) * 30;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + wobble, h);
+          ctx.stroke();
+        }
+        // Random dust particles
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        for (let i = 0; i < 15; i++) {
+          const px = Math.random() * w;
+          const py = Math.random() * h;
+          const pr = Math.random() * 2 + 0.5;
+          ctx.beginPath();
+          ctx.arc(px, py, pr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Random flicker (slight brightness adjustment)
+        if (Math.random() < 0.4) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.02 + Math.random() * 0.03})`;
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.restore();
+      };
+      
+      // Helper for analog horror chromatic aberration
+      const applyChromaticAberration = (offset = 4) => {
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const data = imageData.data;
+        const original = new Uint8ClampedArray(data);
+        
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            const leftX = Math.max(0, x - offset);
+            const rightX = Math.min(w - 1, x + offset);
+            const leftIdx = (y * w + leftX) * 4;
+            const rightIdx = (y * w + rightX) * 4;
+            // Red from right, blue from left
+            data[idx] = original[rightIdx];     // Red
+            data[idx + 2] = original[leftIdx + 2]; // Blue
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      };
+      
+      // Apply effects based on what's in the clip
+      for (const effectId of effects) {
+        try {
+          if (effectId === 'oldTV') {
+            applyColorGrade('vintage');
+            renderGrain(settings.grain?.intensity || 0.22);
+            renderScanlines();
+            renderVignette(settings.vignette?.strength || 0.6, settings.vignette?.inner || 0.56);
+          } else if (effectId === 'snow') {
+            renderSnow();
+          } else if (effectId === 'rain') {
+            renderRain();
+          } else if (effectId === 'oldFilm') {
+            applyColorGrade('sepia');
+            renderGrain(0.25);
+            renderVignette(settings.oldFilm?.vignette || 0.5, 0.5);
+            renderFilmScratches();
+          } else if (effectId === 'analogHorror') {
+            applyColorGrade('vintage');
+            applyChromaticAberration(4);
+            renderGrain(0.35);
+            renderScanlines();
+            renderVignette(0.7, 0.4);
+          }
+        } catch (_effectErr) {}
+      }
     }
     
     async function exportAnimation() {
@@ -23008,8 +24558,9 @@
             exportW = canvases[0].width;
             exportH = canvases[0].height;
           }
-      // Calculate total duration from clips
-      const totalDuration = hasClips ? Math.max(...clips.map(c => c.end)) : (cutoutDuration || 3.0);
+          // Calculate total duration from clips only - use the last clip's end time as the animation duration
+          // The ruler width (cutoutDuration) is just for visualization, not for defining export duration
+          const totalDuration = hasClips ? Math.max(...clips.map(c => c.end)) : (cutoutDuration || 3.0);
           for (let loop = 0; loop < loopCount; loop++) {
             if (hasClips) {
               // Sample the entire timeline at 60fps intervals for smooth playback
@@ -23116,10 +24667,12 @@
         document.getElementById('status-text').textContent = 'Creating MP4 video...';
         
         // Run FFmpeg command to create video at the correct frame rate
+        // Explicitly set both input (-framerate) and output (-r) framerates to ensure correct timing
         await ffmpeg.run(
           '-framerate', exportFps.toString(),
           '-i', framePattern,
           '-c:v', 'libx264',
+          '-r', exportFps.toString(),
           '-pix_fmt', 'yuv420p',
           '-y',
           'output.mp4'
@@ -23239,7 +24792,8 @@
             const clips = Array.isArray(cutoutClips) ? cutoutClips.slice().filter(c => c && typeof c.start === 'number' && typeof c.end === 'number' && c.end > c.start) : [];
             clips.sort((a, b) => a.start - b.start);
             const hasClips = clips.length > 0;
-            // Calculate total duration from clips
+            // Calculate total duration from clips only - use the last clip's end time as the animation duration
+            // The ruler width (cutoutDuration) is just for visualization, not for defining export duration
             const totalDuration = hasClips ? Math.max(...clips.map(c => c.end)) : (cutoutDuration || 3.0);
             const totalFrames = Math.ceil(totalDuration * recorderFps);
             let currentFrame = 0;
