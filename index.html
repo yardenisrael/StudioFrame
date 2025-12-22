@@ -3133,6 +3133,22 @@
               </svg>
               <span>Extend Lasso</span>
             </div>
+            <div class="flex items-center gap-1">
+              <!-- Trash icon to clear pattern (hidden by default, shown only after pattern is picked) -->
+              <div id="extend-pattern-trash" class="hidden" style="cursor:pointer; padding:2px; display:flex; align-items:center; justify-content:center;" onclick="event.stopPropagation(); clearExtendPattern();" title="Clear pattern">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-2 14H7L5 6"/>
+                  <path d="M10 11v6"/>
+                  <path d="M14 11v6"/>
+                  <path d="M9 6V4h6v2"/>
+                </svg>
+              </div>
+              <!-- Pattern picker circle button -->
+              <div id="extend-pattern-picker-btn" style="cursor:pointer; padding:2px; border-radius:50%; border:1px solid currentColor; width:14px; height:14px; display:flex; align-items:center; justify-content:center;" onclick="event.stopPropagation(); toggleExtendPatternPicker();" title="Pick pattern from canvas">
+                <div id="extend-pattern-preview" style="width:8px; height:8px; border-radius:50%; background:transparent; border:1px dashed currentColor;"></div>
+              </div>
+            </div>
           </button>
         </div>
         <div class="text-[10px] text-gray-500 mt-2">Draw a lasso, release to apply.</div>
@@ -3847,10 +3863,8 @@
         updateCutoutPositionDisplay(cutoutSelectedObject.x, cutoutSelectedObject.y);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('position', cutoutCurrentTime, { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record position to the keyframe at current time so transforms are per-keyframe
+        recordCutoutProp('position', { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
       });
       attachCutoutNumericInput(posYEl, 'Position Y', (val) => {
         if (!cutoutSelectedObject) return;
@@ -3858,10 +3872,8 @@
         updateCutoutPositionDisplay(cutoutSelectedObject.x, cutoutSelectedObject.y);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('position', cutoutCurrentTime, { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record position to the keyframe at current time so transforms are per-keyframe
+        recordCutoutProp('position', { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
       });
       // Zoom bar drag listeners (X or Y adjusts both)
       const zoomXEl = document.getElementById('cutout-zoom-x');
@@ -3875,10 +3887,8 @@
         updateCutoutZoomDisplay(cutoutSelectedObject.scaleX, cutoutSelectedObject.scaleY);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('zoom', cutoutCurrentTime, { sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record zoom to the keyframe at current time
+        recordCutoutProp('zoom', { sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY });
       });
       attachCutoutNumericInput(zoomYEl, 'Zoom Y', (val) => {
         if (!cutoutSelectedObject) return;
@@ -3887,10 +3897,8 @@
         updateCutoutZoomDisplay(cutoutSelectedObject.scaleX, cutoutSelectedObject.scaleY);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('zoom', cutoutCurrentTime, { sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record zoom to the keyframe at current time
+        recordCutoutProp('zoom', { sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY });
       });
       // Rotation slider listeners
       const rotTrack = document.getElementById('cutout-rot-track');
@@ -3904,10 +3912,8 @@
         updateCutoutRotationDisplay(val);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('rotation', cutoutCurrentTime, { deg: val });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record rotation to the keyframe at current time
+        recordCutoutProp('rotation', { deg: val });
       });
       // Opacity slider listeners
       const opaTrack = document.getElementById('cutout-opa-track');
@@ -3922,10 +3928,8 @@
         updateCutoutOpacityDisplay(clamped);
         cutoutRenderSelectionOverlay();
         try { scheduleCutoutPreviewForTime(); } catch (_e) {}
-        if (cutoutRecorderArmed) {
-          addOrUpdatePropKeyAt('opacity', cutoutCurrentTime, { value: clamped });
-          drawCutoutTimeline(); updateRowKeyActiveStates();
-        }
+        // Always record opacity to the keyframe at current time
+        recordCutoutProp('opacity', { value: clamped });
       });
       // Recorder listeners
       const recBtn = document.getElementById('cutout-rec-btn');
@@ -7345,10 +7349,8 @@
       const pct = (px - rect.left) / rect.width; // 0..1
       const deg = (pct * 360) - 180; // -180..+180
       setCutoutRotationFromDegrees(deg);
-      if (cutoutRecorderArmed) {
-        addOrUpdatePropKeyAt('rotation', cutoutCurrentTime, { deg });
-        drawCutoutTimeline(); updateRowKeyActiveStates();
-      }
+      // Always record rotation to the keyframe at current time
+      recordCutoutProp('rotation', { deg });
     }
     function endRotSliderDrag() {
       isDraggingRotSlider = false;
@@ -7594,6 +7596,14 @@
       arr.sort((a, b) => a.time - b.time);
       // Ensure the underlying clip extends to cover this key's time
       extendActiveCutoutClipToTime(time);
+    }
+    
+    // Helper: always record a cutout property key at the current time and refresh UI
+    function recordCutoutProp(prop, values, targetKeys) {
+      const t = Math.max(0, Math.min(cutoutDuration, cutoutCurrentTime || 0));
+      addOrUpdatePropKeyAt(prop, t, values, targetKeys);
+      try { drawCutoutTimeline(); } catch (_e) {}
+      try { updateRowKeyActiveStates(); } catch (_e) {}
     }
     function togglePropertyKey(prop) {
       saveState();
@@ -8875,6 +8885,303 @@
       return slot;
     }
     
+    // ============================================
+    // Extend Lasso Pattern Picker Feature
+    // ============================================
+    let extendPatternPickerActive = false;      // Is the pattern picker mode active?
+    let extendPatternCircleRadius = 10;         // Current radius of the picker circle (start at minimum)
+    let extendPatternData = null;               // Captured pattern ImageData
+    let extendPatternCanvas = null;             // Canvas containing the captured pattern
+    let extendPatternCircleOverlay = null;      // The circle cursor overlay element
+    
+    function toggleExtendPatternPicker() {
+      if (extendPatternPickerActive) {
+        // Deactivate pattern picker mode
+        extendPatternPickerActive = false;
+        removeExtendPatternCircleOverlay();
+        document.body.style.cursor = '';
+      } else {
+        // Activate pattern picker mode
+        extendPatternPickerActive = true;
+        extendPatternCircleRadius = 10; // Reset to minimum size
+        createExtendPatternCircleOverlay();
+        document.body.style.cursor = 'none';
+        // Also select the extend-lasso tool so this behaves like selecting the tool
+        try { if (typeof setTool === 'function') setTool('extend-lasso'); } catch (_e) {}
+      }
+      updateExtendPatternPickerBtnState();
+    }
+    
+    function updateExtendPatternPickerBtnState() {
+      const btn = document.getElementById('extend-pattern-picker-btn');
+      const preview = document.getElementById('extend-pattern-preview');
+      const trash = document.getElementById('extend-pattern-trash');
+      
+      if (btn) {
+        if (extendPatternPickerActive) {
+          btn.style.borderColor = '#a855f7';
+          btn.style.background = 'rgba(168, 85, 247, 0.2)';
+        } else {
+          btn.style.borderColor = 'currentColor';
+          btn.style.background = 'transparent';
+        }
+      }
+      // Update preview with captured pattern
+      if (preview && extendPatternCanvas) {
+        preview.style.background = `url(${extendPatternCanvas.toDataURL()})`;
+        preview.style.backgroundSize = 'cover';
+        preview.style.border = 'none';
+      } else if (preview) {
+        preview.style.background = 'transparent';
+        preview.style.border = '1px dashed currentColor';
+      }
+      // Show/hide trash icon based on whether a pattern exists
+      if (trash) {
+        if (extendPatternCanvas && extendPatternData) {
+          trash.classList.remove('hidden');
+        } else {
+          trash.classList.add('hidden');
+        }
+      }
+    }
+    
+    function clearExtendPattern() {
+      extendPatternData = null;
+      extendPatternCanvas = null;
+      extendPatternPickerActive = false;
+      removeExtendPatternCircleOverlay();
+      document.body.style.cursor = '';
+      updateExtendPatternPickerBtnState();
+      // Hide trash icon
+      const trash = document.getElementById('extend-pattern-trash');
+      if (trash) trash.classList.add('hidden');
+    }
+    
+    function createExtendPatternCircleOverlay() {
+      if (extendPatternCircleOverlay) return;
+      extendPatternCircleOverlay = document.createElement('div');
+      extendPatternCircleOverlay.id = 'extend-pattern-circle-overlay';
+      extendPatternCircleOverlay.style.cssText = `
+        position: fixed;
+        pointer-events: none;
+        z-index: 99999;
+        border: 2px solid #a855f7;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.3);
+        transform: translate(-50%, -50%);
+      `;
+      updateExtendPatternCircleSize();
+      document.body.appendChild(extendPatternCircleOverlay);
+      
+      // Add event listeners
+      document.addEventListener('mousemove', handleExtendPatternMouseMove);
+      document.addEventListener('click', handleExtendPatternClick, true);
+      document.addEventListener('keydown', handleExtendPatternKeydown);
+    }
+    
+    function removeExtendPatternCircleOverlay() {
+      if (extendPatternCircleOverlay) {
+        extendPatternCircleOverlay.remove();
+        extendPatternCircleOverlay = null;
+      }
+      document.removeEventListener('mousemove', handleExtendPatternMouseMove);
+      document.removeEventListener('click', handleExtendPatternClick, true);
+      document.removeEventListener('keydown', handleExtendPatternKeydown);
+    }
+    
+    function updateExtendPatternCircleSize() {
+      if (extendPatternCircleOverlay) {
+        const diameter = extendPatternCircleRadius * 2;
+        extendPatternCircleOverlay.style.width = diameter + 'px';
+        extendPatternCircleOverlay.style.height = diameter + 'px';
+      }
+    }
+    
+    function handleExtendPatternMouseMove(e) {
+      if (extendPatternCircleOverlay) {
+        extendPatternCircleOverlay.style.left = e.clientX + 'px';
+        extendPatternCircleOverlay.style.top = e.clientY + 'px';
+      }
+    }
+    
+    function handleExtendPatternKeydown(e) {
+      if (!extendPatternPickerActive) return;
+      
+      if (e.key === 'Escape') {
+        toggleExtendPatternPicker();
+        return;
+      }
+      
+      // Handle + and - keys to resize the circle
+      if (e.key === '+' || e.key === '=' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        extendPatternCircleRadius = Math.min(150, extendPatternCircleRadius + 5);
+        updateExtendPatternCircleSize();
+      } else if (e.key === '-' || e.key === '_' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        extendPatternCircleRadius = Math.max(10, extendPatternCircleRadius - 5);
+        updateExtendPatternCircleSize();
+      }
+    }
+    
+    function handleExtendPatternClick(e) {
+      if (!extendPatternPickerActive) return;
+      
+      // Check if click is on the canvas (cutout or regular)
+      const cutoutCanvas = document.getElementById('cutout-canvas');
+      const mainCanvas = document.getElementById('main-canvas');
+      const targetCanvas = isCutOutMode ? cutoutCanvas : mainCanvas;
+      
+      if (!targetCanvas) return;
+      
+      const rect = targetCanvas.getBoundingClientRect();
+      const clickX = e.clientX;
+      const clickY = e.clientY;
+      
+      // Check if click is within canvas bounds
+      if (clickX >= rect.left && clickX <= rect.right && clickY >= rect.top && clickY <= rect.bottom) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Calculate canvas coordinates
+        const scaleX = targetCanvas.width / rect.width;
+        const scaleY = targetCanvas.height / rect.height;
+        const canvasX = (clickX - rect.left) * scaleX;
+        const canvasY = (clickY - rect.top) * scaleY;
+        
+        // Calculate radius in canvas coordinates
+        const canvasRadius = extendPatternCircleRadius * scaleX;
+        
+        // Only capture from objects/images, not from the canvas itself
+        const captured = captureExtendPatternFromObjects(canvasX, canvasY, canvasRadius);
+        
+        if (captured) {
+          // Exit picker mode
+          extendPatternPickerActive = false;
+          removeExtendPatternCircleOverlay();
+          document.body.style.cursor = '';
+          updateExtendPatternPickerBtnState();
+        }
+        // If not captured (no object found), stay in picker mode
+      }
+    }
+    
+    // Capture pattern from objects/images only (not from canvas drawings)
+    function captureExtendPatternFromObjects(centerX, centerY, radius) {
+      // Get objects from the current clip (cutout mode) or layer (regular mode)
+      let objects = [];
+      
+      if (isCutOutMode) {
+        const idx = (typeof selectedCutoutClipIndex === 'number' && selectedCutoutClipIndex >= 0) 
+          ? selectedCutoutClipIndex 
+          : (typeof getActiveCutoutClipIndexAt === 'function' ? getActiveCutoutClipIndexAt(cutoutCurrentTime) : -1);
+        const clip = (idx >= 0 && Array.isArray(cutoutClips)) ? cutoutClips[idx] : null;
+        objects = (clip && Array.isArray(clip.objects)) ? clip.objects : [];
+      } else {
+        const layer = (Array.isArray(frameLayers) && frameLayers[currentFrame] && frameLayers[currentFrame][currentLayer]) 
+          ? frameLayers[currentFrame][currentLayer] : null;
+        objects = (layer && Array.isArray(layer.images)) ? layer.images : [];
+      }
+      
+      if (!objects.length) return false;
+      
+      // Find object(s) that have pixels within the circle area
+      const diameter = Math.ceil(radius * 2);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = diameter;
+      tempCanvas.height = diameter;
+      const tctx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      
+      // Draw all objects that might contribute to the circle area
+      let hasContent = false;
+      for (let k = 0; k < objects.length; k++) {
+        const obj = objects[k];
+        if (!obj || !obj.img) continue;
+        
+        // Draw this object offset so the circle center is at (radius, radius)
+        try {
+          tctx.save();
+          // Clip to circle
+          tctx.beginPath();
+          tctx.arc(radius, radius, radius, 0, Math.PI * 2);
+          tctx.closePath();
+          tctx.clip();
+          
+          // Draw the object with offset
+          drawRotatedImage(tctx, obj, 1, 1, radius - centerX, radius - centerY);
+          tctx.restore();
+        } catch (_e) {}
+      }
+      
+      // Check if we captured any opaque pixels
+      const imgData = tctx.getImageData(0, 0, diameter, diameter);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        if (imgData.data[i + 3] > 0) {
+          hasContent = true;
+          break;
+        }
+      }
+      
+      if (!hasContent) return false;
+      
+      // Store the captured pattern
+      extendPatternCanvas = tempCanvas;
+      extendPatternData = imgData;
+      
+      // Update the button preview
+      updateExtendPatternPickerBtnState();
+      return true;
+    }
+    
+    // Function to fill a mask using the captured pattern with palette-based synthesis
+    // Uses the same blending logic as regular extend lasso for natural results
+    function fillMaskWithCapturedPattern(maskData, bw, bh) {
+      if (!extendPatternCanvas || !extendPatternData) return null;
+      
+      const patternW = extendPatternCanvas.width;
+      const patternH = extendPatternCanvas.height;
+      const patternPixels = extendPatternData.data;
+      
+      // Create a fake "base data" array sized to match the mask, filled by tiling the pattern
+      // This will be used as the source for palette building (same as regular extend lasso uses object pixels)
+      const tiledPatternData = new Uint8ClampedArray(bw * bh * 4);
+      
+      for (let y = 0; y < bh; y++) {
+        for (let x = 0; x < bw; x++) {
+          const idx = (y * bw + x) * 4;
+          // Tile the pattern
+          const px = x % patternW;
+          const py = y % patternH;
+          const pi = (py * patternW + px) * 4;
+          tiledPatternData[idx] = patternPixels[pi];
+          tiledPatternData[idx + 1] = patternPixels[pi + 1];
+          tiledPatternData[idx + 2] = patternPixels[pi + 2];
+          tiledPatternData[idx + 3] = patternPixels[pi + 3];
+        }
+      }
+      
+      // Build a palette from the captured pattern (using existing extend lasso palette functions)
+      // Create a full-coverage mask for palette building from the pattern
+      const patternMask = new Uint8ClampedArray(bw * bh * 4);
+      for (let i = 0; i < patternMask.length; i += 4) {
+        if (tiledPatternData[i + 3] > 0) {
+          patternMask[i + 3] = 255; // Mark as valid for palette sampling
+        }
+      }
+      
+      // Use the same palette-based synthesis as regular extend lasso
+      const palette = buildDominantPalette(tiledPatternData, patternMask, bw, bh, 8, 5);
+      if (!palette.length) return null;
+      
+      const globalWeights = palette.map(c => c.weight);
+      const colWeights = buildColumnPaletteWeights(tiledPatternData, patternMask, bw, bh, palette);
+      
+      // Use the same fill function with same parameters as regular extend lasso
+      const fillData = fillMaskWithPalette(palette, globalWeights, colWeights, maskData, bw, bh, 0.9, 0.1, 0.05, computeStrayRadiusPx(bw), 2);
+      
+      return fillData;
+    }
+    
     // Palette-based synthesis helpers for Extend Lasso
     function buildDominantPalette(baseData, maskData, bw, bh, bins = 8, maxColors = 5) {
       const binSize = 256 / bins;
@@ -9114,13 +9421,24 @@
         } catch (_e) { /* ignore */ }
       }
       if (!objAlphaData) return false;
-      // Build palette from the object's pixels within the lasso
-      const palette = buildDominantPalette(objAlphaData, maskData, bw, bh, 8, 5);
-      if (!palette.length) return false;
-      const globalWeights = palette.map(c => c.weight);
-      const colWeights = buildColumnPaletteWeights(objAlphaData, maskData, bw, bh, palette);
-      // Synthesize full-coverage fill for the entire mask using palette with vertical coherence and slight horizontal jitter
-      const fillData = fillMaskWithPalette(palette, globalWeights, colWeights, maskData, bw, bh, 0.9, 0.1, 0.05, computeStrayRadiusPx(bw), 2);
+      
+      // Check if we have a captured pattern to use instead of palette synthesis
+      let fillData;
+      if (extendPatternCanvas && extendPatternData) {
+        // Use the captured pattern
+        fillData = fillMaskWithCapturedPattern(maskData, bw, bh);
+      }
+      
+      // Fall back to palette synthesis if no pattern or pattern fill failed
+      if (!fillData) {
+        // Build palette from the object's pixels within the lasso
+        const palette = buildDominantPalette(objAlphaData, maskData, bw, bh, 8, 5);
+        if (!palette.length) return false;
+        const globalWeights = palette.map(c => c.weight);
+        const colWeights = buildColumnPaletteWeights(objAlphaData, maskData, bw, bh, palette);
+        // Synthesize full-coverage fill for the entire mask using palette with vertical coherence and slight horizontal jitter
+        fillData = fillMaskWithPalette(palette, globalWeights, colWeights, maskData, bw, bh, 0.9, 0.1, 0.05, computeStrayRadiusPx(bw), 2);
+      }
       // Compose: clip to polygon (do not subtract existing coverage so new extend overlays previous)
       const outCanvas = document.createElement('canvas');
       outCanvas.width = bw; outCanvas.height = bh;
@@ -9151,46 +9469,96 @@
           const effScaleY = (targetObj && typeof targetObj.scaleY === 'number') ? targetObj.scaleY : 1;
           const oldDrawW = Math.max(1, Math.round(baseW * (targetObj.scale || 1) * effScaleX));
           const oldDrawH = Math.max(1, Math.round(baseH * (targetObj.scale || 1) * effScaleY));
-          // New canvas size keeps original top-left at (0,0) to preserve x,y on screen
-          const newW = Math.max(oldDrawW, (minX + bw) - oldX);
-          const newH = Math.max(oldDrawH, (minY + bh) - oldY);
+          
+          // Calculate how much the lasso extends beyond each edge of the object
+          // Only expand when extension actually goes beyond current bounds
+          const leftExpand = Math.max(0, oldX - minX);  // extends left of object
+          const topExpand = Math.max(0, oldY - minY);   // extends above object
+          const rightExpand = Math.max(0, (minX + bw) - (oldX + oldDrawW));  // extends right of object
+          const bottomExpand = Math.max(0, (minY + bh) - (oldY + oldDrawH)); // extends below object
+          
+          // New canvas size includes all expansions
+          const newW = oldDrawW + leftExpand + rightExpand;
+          const newH = oldDrawH + topExpand + bottomExpand;
+          
           const merged = document.createElement('canvas');
           merged.width = Math.max(1, Math.ceil(newW));
           merged.height = Math.max(1, Math.ceil(newH));
           const mctx = merged.getContext('2d', { willReadFrequently: true });
-          // Draw original object anchored so its top-left remains at (0,0)
-          try { drawRotatedImage(mctx, targetObj, 1, 1, -oldX, -oldY); } catch (_e) {}
-          // Draw extended fill at its relative offset from old top-left
+          
+          // Draw original object shifted by leftExpand/topExpand so it's at the correct position
+          // Original content goes at (leftExpand, topExpand) in the new canvas
+          try { drawRotatedImage(mctx, targetObj, 1, 1, leftExpand - oldX, topExpand - oldY); } catch (_e) {}
+          
+          // Draw extended fill at correct position in merged canvas
+          // Extension's position relative to new canvas origin
           mctx.save();
           mctx.globalCompositeOperation = 'source-over';
-          mctx.drawImage(outCanvas, minX - oldX, minY - oldY);
+          mctx.drawImage(outCanvas, minX - oldX + leftExpand, minY - oldY + topExpand);
           mctx.restore();
-          // Update target object to merged; bake transforms and keep position unchanged
+          
+          // For left/top expansion: position must shift to keep original content at same visual location
+          // For right/bottom expansion only: position stays the same (like original code)
+          const newX = oldX - leftExpand;
+          const newY = oldY - topExpand;
+          
+          // Update target object to merged; bake transforms and keep position correct
           const dataUrl = merged.toDataURL('image/png');
           const newImg = new Image();
           newImg.onload = () => {
+            // Replace canvas with loaded Image for better quality
             targetObj.img = newImg;
             targetObj.src = dataUrl;
-            // Preserve original position values
-            targetObj.x = oldX;
-            targetObj.y = oldY;
-            targetObj.drawW = merged.width;
-            targetObj.drawH = merged.height;
-            targetObj.isImage = true;
-            // Bake transforms
-            targetObj.scale = 1; targetObj.scaleX = 1; targetObj.scaleY = 1; targetObj.rotation = 0;
-            // Clear zoom/rotation keys to avoid reapplying transforms
-            if (targetObj.keys) {
-              if (Array.isArray(targetObj.keys.zoom)) targetObj.keys.zoom = [];
-              if (Array.isArray(targetObj.keys.rotation)) targetObj.keys.rotation = [];
-            }
             // Ensure preview/UI reflect changes
             try { renderCutoutPreviewForTime && renderCutoutPreviewForTime(); } catch (_e) {}
             if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList();
           };
-          // Immediately set canvas to avoid flicker before Image load
+          // Update ALL properties immediately to avoid any render desync
+          // Update pivot FIRST to keep world pivot position stable
+          if (leftExpand > 0 || topExpand > 0) {
+            if (typeof targetObj.pivotLocalX === 'number') {
+              targetObj.pivotLocalX = targetObj.pivotLocalX + leftExpand;
+            }
+            if (typeof targetObj.pivotLocalY === 'number') {
+              targetObj.pivotLocalY = targetObj.pivotLocalY + topExpand;
+            }
+          }
+          // Bake transforms BEFORE updating image/position
+          targetObj.scale = 1; targetObj.scaleX = 1; targetObj.scaleY = 1; targetObj.rotation = 0;
+          // Clear zoom/rotation keys to avoid reapplying transforms
+          if (targetObj.keys) {
+            if (Array.isArray(targetObj.keys.zoom)) targetObj.keys.zoom = [];
+            if (Array.isArray(targetObj.keys.rotation)) targetObj.keys.rotation = [];
+          }
+          // CRITICAL: When expanding left/top, we must also offset ALL position keyframes
+          // Otherwise the render will use old keyframed positions instead of the new base position
+          // This was causing the "ghost position" issue for left/top expansions
+          if ((leftExpand > 0 || topExpand > 0) && targetObj.keys && Array.isArray(targetObj.keys.position)) {
+            for (let ki = 0; ki < targetObj.keys.position.length; ki++) {
+              const kf = targetObj.keys.position[ki];
+              if (kf && typeof kf.x === 'number') {
+                kf.x = kf.x - leftExpand;
+              }
+              if (kf && typeof kf.y === 'number') {
+                kf.y = kf.y - topExpand;
+              }
+            }
+          }
+          // Now set image, position, and dimensions all together
           targetObj.img = merged;
           targetObj.src = dataUrl;
+          targetObj.x = newX;
+          targetObj.y = newY;
+          targetObj.drawW = merged.width;
+          targetObj.drawH = merged.height;
+          targetObj.isImage = true;
+          // Refresh selection overlay and preview immediately to show new position/size
+          if (typeof cutoutRenderSelectionOverlay === 'function') {
+            try { cutoutRenderSelectionOverlay(); } catch (_e) {}
+          }
+          if (typeof renderCutoutPreviewForTime === 'function') {
+            try { renderCutoutPreviewForTime(); } catch (_e) {}
+          }
           newImg.src = dataUrl;
           try { saveState(); } catch (_e) {}
         }
@@ -9233,12 +9601,23 @@
         if (maskData[i + 3] > 0 && existingData[i + 3] > 0) { hasAny = true; break; }
       }
       if (!hasAny) return false;
-      // Build palette from existing raster and synthesize full-coverage fill
-      const palette = buildDominantPalette(existingData, maskData, bw, bh, 8, 5);
-      if (!palette.length) return false;
-      const globalWeights = palette.map(c => c.weight);
-      const colWeights = buildColumnPaletteWeights(existingData, maskData, bw, bh, palette);
-      const fillData = fillMaskWithPalette(palette, globalWeights, colWeights, maskData, bw, bh, 0.9, 0.1, 0.05, computeStrayRadiusPx(bw), 2);
+      
+      // Check if we have a captured pattern to use instead of palette synthesis
+      let fillData;
+      if (extendPatternCanvas && extendPatternData) {
+        // Use the captured pattern
+        fillData = fillMaskWithCapturedPattern(maskData, bw, bh);
+      }
+      
+      // Fall back to palette synthesis if no pattern or pattern fill failed
+      if (!fillData) {
+        // Build palette from existing raster and synthesize full-coverage fill
+        const palette = buildDominantPalette(existingData, maskData, bw, bh, 8, 5);
+        if (!palette.length) return false;
+        const globalWeights = palette.map(c => c.weight);
+        const colWeights = buildColumnPaletteWeights(existingData, maskData, bw, bh, palette);
+        fillData = fillMaskWithPalette(palette, globalWeights, colWeights, maskData, bw, bh, 0.9, 0.1, 0.05, computeStrayRadiusPx(bw), 2);
+      }
       // Compose: clip to polygon and subtract original coverage (existing raster)
       const srcOffscreen = document.createElement('canvas');
       srcOffscreen.width = bw; srcOffscreen.height = bh;
