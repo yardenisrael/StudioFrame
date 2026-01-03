@@ -14,8 +14,8 @@
   </script>
   
   <!-- Enhanced SEO meta tags -->
-  <title>Frame Studio - Animate Images Online | Lightweight 2D Animation Tool</title>
-  <meta name="description" content="Animate your images online with Frame Studio. Draw on a simple canvas, move layers, and build quick frame-by-frame motion without heavy software. A lightweight way to animate online when you just want pictures to come to life.">
+  <title>Frame Studio — Online Image Animation Tool</title>
+  <meta name="description" content="Animate your images by splitting them into objects and moving them between keyframes.">
   <meta name="keywords" content="animate images online, animate online, online image animation tool, simple animation editor, lightweight animation software, frame by frame animation, canvas animation, pixel art animation, sprite animation, mp4 export, onion skinning, animation layers, timeline editor">
   <meta name="author" content="Frame Studio">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
@@ -33,7 +33,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://framestudio.live/">
   <meta property="og:title" content="Frame Studio - Animate Images Online | Lightweight 2D Animation Tool">
-  <meta property="og:description" content="Animate your images online with Frame Studio. Draw on the canvas, move layers, and build simple frame-by-frame motion without heavy apps. Lightweight and ready when you just want pictures to move.">
+  <meta property="og:description" content="Animate your images by splitting them into objects and moving them between keyframes.">
   <meta property="og:image" content="https://framestudio.live/favicon.png">
   <meta property="og:image:width" content="410">
   <meta property="og:image:height" content="410">
@@ -45,7 +45,7 @@
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:url" content="https://framestudio.live/">
   <meta property="twitter:title" content="Frame Studio - Animate Images Online | Lightweight 2D Animation Tool">
-  <meta property="twitter:description" content="Animate your images online with Frame Studio. Draw on the canvas, move layers, and build simple frame-by-frame motion without heavy apps. Lightweight and ready when you just want pictures to move.">
+  <meta property="twitter:description" content="Animate your images by splitting them into objects and moving them between keyframes.">
   <meta property="twitter:image" content="https://framestudio.live/favicon.png">
   <meta property="twitter:image:alt" content="Frame Studio Animation Tool Logo">
   <meta property="twitter:creator" content="@FrameStudio">
@@ -775,6 +775,157 @@
       /* Ensure phone dimension canvases fill height properly */
       .canvas-container {
         min-height: 400px;
+      }
+    }
+
+    /* Tablet responsive layout for Cut Out Mode (between mobile and desktop)
+     * Breakpoints:
+     * - Mobile (≤ 768px): Side panels in slide-out drawers
+     * - Tablet (769px - 1280px): Side panels repositioned beneath canvas
+     * - Desktop (> 1280px): Side panels positioned on left/right of canvas
+     */
+    @media (min-width: 769px) and (max-width: 1280px) {
+      /* Enable touch drawing on cutout canvas for tablets */
+      #cutout-canvas {
+        touch-action: none;
+      }
+
+      #cutout-canvas-container {
+        touch-action: none;
+      }
+
+      /* Allow scrolling on picture board for tablets */
+      #cutout-board-body {
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Picture board items should be draggable */
+      #cutout-board-grid > div {
+        touch-action: none;
+        cursor: grab;
+      }
+
+      #cutout-board-grid > div:active {
+        cursor: grabbing;
+      }
+
+      /* Make transform controls touch-friendly on tablets */
+      #cutout-pos-x,
+      #cutout-pos-y,
+      #cutout-zoom-x,
+      #cutout-zoom-y,
+      #cutout-rot-value,
+      #cutout-opa-value {
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      #cutout-rot-track,
+      #cutout-opa-track {
+        touch-action: none;
+        cursor: pointer;
+      }
+
+      /* Improve tap targets for transform controls */
+      #cutout-pos-key,
+      #cutout-zoom-key,
+      #cutout-rot-key,
+      #cutout-opa-key {
+        min-width: 20px;
+        min-height: 20px;
+        cursor: pointer;
+      }
+
+      /* Make recorder time scrubber touch-friendly */
+      #cutout-rec-time {
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: ew-resize;
+      }
+
+      #cutout-rec-btn {
+        touch-action: manipulation;
+        cursor: pointer;
+      }
+      /* Make panel use flexbox layout with column direction */
+      #cutout-mode-container .panel {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        padding-top: 56px !important; /* Make room for title */
+      }
+
+      /* Canvas wrapper stays at top */
+      #cutout-mode-container .panel > .flex.justify-center {
+        width: 100%;
+        position: relative;
+        z-index: 1;
+        margin-bottom: 24px;
+      }
+
+      /* Picture Board - reposition from absolute to static flow beneath canvas */
+      #cutout-picture-board {
+        position: static !important;
+        left: auto !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 500px !important;
+        margin-bottom: 16px;
+        z-index: 5;
+      }
+
+      /* Transform Panel - reposition from absolute to static flow */
+      #cutout-transform-panel {
+        position: static !important;
+        right: auto !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 500px !important;
+        margin-bottom: 16px;
+        align-items: center !important;
+        z-index: 5;
+      }
+
+      /* Keep recorder control absolutely positioned at top */
+      #cutout-recorder {
+        position: absolute !important;
+        top: -12px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 10;
+      }
+
+      /* Keep cutout mode title absolutely positioned at top */
+      #cutout-mode-title {
+        position: absolute !important;
+        top: 12px !important;
+        left: 16px !important;
+        z-index: 10;
+      }
+
+      /* Adjust transform panel widths for better display */
+      #cutout-transform-panel > div {
+        width: 100% !important;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* Center all control bars */
+      #cutout-posbar,
+      #cutout-zoombar,
+      #cutout-rotbar,
+      #cutout-opabar {
+        justify-content: center !important;
+      }
+
+      /* Ensure objects and layers panels fit properly */
+      #cutout-objects-panel,
+      #cutout-layers-panel {
+        width: 100% !important;
       }
     }
 
@@ -3409,7 +3560,7 @@
     let meshWarpActiveObjectId = null; // ID of object currently being mesh-warped
     let meshWarpOverlayCanvas = null;
     let meshWarpOverlayCtx = null;
-    let meshWarpGridSize = 4; // 4x4 grid of control points
+    let meshWarpGridSize = 10; // 10x10 grid of control points (increased density)
     let meshWarpDraggingNode = null; // { row, col, offsetX, offsetY }
     let meshWarpNodes = null; // Current working copy of mesh nodes being dragged
     // Cutout drawing state and timeline clips
@@ -3502,8 +3653,10 @@
       // Apply requested scaling: +20% in phone, +100% (2x) in desktop (as baseline)
       const scale = isPhone ? 1.2 : 2.0;
       const scaledWidth = Math.max(100, Math.round(refWidthPx * scale));
-      // In desktop, reserve space for the Transform Tools panel so it doesn't overlap the canvas
-      if (!isPhone) {
+      // Check if we're in tablet range (769px - 1280px)
+      const isTablet = (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1280);
+      // In desktop (not phone and not tablet), reserve space for the Transform Tools panel so it doesn't overlap the canvas
+      if (!isPhone && !isTablet) {
         const outerPanel = document.querySelector('#cutout-mode-container .panel');
         const toolsPanel = document.getElementById('cutout-transform-panel');
         const boardPanel = document.getElementById('cutout-picture-board');
@@ -3692,11 +3845,12 @@
       refreshCutoutSliderUi();
     }
 
-    // Attach double-tap editing on phone to numeric readouts to surface keyboard
+    // Attach double-tap editing on phone and tablet to numeric readouts to surface keyboard
     function attachCutoutNumericInput(el, label, applyValue) {
       if (!el) return;
       el.addEventListener('dblclick', () => {
-        if (!isPhoneViewport()) return;
+        // Enable for touch devices (phones and tablets)
+        if (!shouldEnableTouchGestures()) return;
         const current = (el.textContent || '').trim();
         const next = prompt(`${label}`, current);
         if (next === null) return;
@@ -3852,11 +4006,29 @@
           drawCutoutBonesOverlay();
         }
       } catch (_e) {}
-      // Position bar drag listeners
+      // Position bar drag listeners (mouse and touch)
       const posXEl = document.getElementById('cutout-pos-x');
       const posYEl = document.getElementById('cutout-pos-y');
-      if (posXEl) posXEl.addEventListener('mousedown', (e) => beginPosDrag(e, 'x'));
-      if (posYEl) posYEl.addEventListener('mousedown', (e) => beginPosDrag(e, 'y'));
+      if (posXEl) {
+        posXEl.addEventListener('mousedown', (e) => beginPosDrag(e, 'x'));
+        posXEl.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            const touch = e.touches[0];
+            const mouseEvent = { clientX: touch.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+            beginPosDrag(mouseEvent, 'x');
+          }
+        }, { passive: false });
+      }
+      if (posYEl) {
+        posYEl.addEventListener('mousedown', (e) => beginPosDrag(e, 'y'));
+        posYEl.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            const touch = e.touches[0];
+            const mouseEvent = { clientX: touch.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+            beginPosDrag(mouseEvent, 'y');
+          }
+        }, { passive: false });
+      }
       attachCutoutNumericInput(posXEl, 'Position X', (val) => {
         if (!cutoutSelectedObject) return;
         cutoutSelectedObject.x = val;
@@ -3875,11 +4047,29 @@
         // Always record position to the keyframe at current time so transforms are per-keyframe
         recordCutoutProp('position', { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
       });
-      // Zoom bar drag listeners (X or Y adjusts both)
+      // Zoom bar drag listeners (X or Y adjusts both) - mouse and touch
       const zoomXEl = document.getElementById('cutout-zoom-x');
       const zoomYEl = document.getElementById('cutout-zoom-y');
-      if (zoomXEl) zoomXEl.addEventListener('mousedown', beginZoomDrag);
-      if (zoomYEl) zoomYEl.addEventListener('mousedown', beginZoomDrag);
+      if (zoomXEl) {
+        zoomXEl.addEventListener('mousedown', beginZoomDrag);
+        zoomXEl.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            const touch = e.touches[0];
+            const mouseEvent = { clientX: touch.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+            beginZoomDrag(mouseEvent);
+          }
+        }, { passive: false });
+      }
+      if (zoomYEl) {
+        zoomYEl.addEventListener('mousedown', beginZoomDrag);
+        zoomYEl.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            const touch = e.touches[0];
+            const mouseEvent = { clientX: touch.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+            beginZoomDrag(mouseEvent);
+          }
+        }, { passive: false });
+      }
       attachCutoutNumericInput(zoomXEl, 'Zoom X', (val) => {
         if (!cutoutSelectedObject) return;
         cutoutSelectedObject.scaleX = val;
@@ -3931,11 +4121,20 @@
         // Always record opacity to the keyframe at current time
         recordCutoutProp('opacity', { value: clamped });
       });
-      // Recorder listeners
+      // Recorder listeners (mouse and touch)
       const recBtn = document.getElementById('cutout-rec-btn');
       const recTime = document.getElementById('cutout-rec-time');
       if (recBtn) recBtn.addEventListener('click', toggleCutoutRecording);
-      if (recTime) recTime.addEventListener('mousedown', beginRecTimeDrag);
+      if (recTime) {
+        recTime.addEventListener('mousedown', beginRecTimeDrag);
+        recTime.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            const touch = e.touches[0];
+            const mouseEvent = { clientX: touch.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+            beginRecTimeDrag(mouseEvent);
+          }
+        }, { passive: false });
+      }
       // Initialize recorder button style: paused/armed (grey)
       const rb = document.getElementById('cutout-rec-btn');
       if (rb) { rb.style.background = '#6b7280'; rb.style.boxShadow = '0 0 6px rgba(0,0,0,0.35)'; }
@@ -5041,6 +5240,8 @@
     // Position both panels below the "Cut Out Mode" title at same height
     function positionCutoutTransformPanel() {
       if (document.body && document.body.classList.contains('cutout-mobile-mode')) return;
+      // Skip positioning for tablet range (769px - 1280px) where panels are in flow layout
+      if (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1280) return;
       const transformPanel = document.getElementById('cutout-transform-panel');
       const pictureBoard = document.getElementById('cutout-picture-board');
       // Position below "Cut Out Mode" title (which is at top:12px with ~14px height)
@@ -5329,7 +5530,6 @@
           } catch (_e) { /* ignore read failures */ }
         }
         if (hitImage && hitImage.img) {
-          saveState();
           // Render image object to a full-size offscreen with current transform
           const fullW = cutoutCanvas.width, fullH = cutoutCanvas.height;
           const drawOnlyObj = (dstCtx) => {
@@ -5651,6 +5851,8 @@
                 renderCutoutPreviewForTime();
                 renderCutoutClips();
                 if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList();
+                // Save state after async image load completes
+                try { saveState(); } catch (_e) {}
               };
               newImg.src = dataUrl;
               saveState();
@@ -5786,6 +5988,7 @@
         if (typeof renderCutoutLayersPanel === 'function') renderCutoutLayersPanel();
         drawCutoutTimeline();
         updateRowKeyActiveStates();
+        saveState();
       };
       img.src = src;
     }
@@ -6238,6 +6441,71 @@
       return nodes;
     }
     
+    // Resample an existing normalized mesh (oldNodes) from its old grid size to a new grid size.
+    // Interpolates DEFORMATION DELTAS (offsets from default positions) so image doesn't scale.
+    function resampleMeshNodes(oldNodes, oldGridSize, newGridSize, obj = null) {
+      if (!oldNodes || !Number.isFinite(oldGridSize) || !Number.isFinite(newGridSize) || oldGridSize < 1 || newGridSize < 1) {
+        return initMeshWarpGrid(obj);
+      }
+
+      // Helper to get the deformation delta (offset from default position) for an old node
+      const getNodeDelta = (row, col) => {
+        const defaultNx = col / oldGridSize;
+        const defaultNy = row / oldGridSize;
+        const node = oldNodes[row] && oldNodes[row][col];
+        if (node) {
+          return {
+            dx: node.nx - defaultNx,
+            dy: node.ny - defaultNy
+          };
+        }
+        return { dx: 0, dy: 0 };
+      };
+
+      const out = [];
+      for (let row = 0; row <= newGridSize; row++) {
+        out[row] = [];
+        for (let col = 0; col <= newGridSize; col++) {
+          // New node's default position in normalized coordinates
+          const newDefaultNx = col / newGridSize;
+          const newDefaultNy = row / newGridSize;
+          
+          // Map this position back to old grid coordinates
+          const s = newDefaultNx * oldGridSize; // column position in old grid space
+          const t = newDefaultNy * oldGridSize; // row position in old grid space
+          
+          // Find the surrounding old grid cells for bilinear interpolation
+          const i = Math.min(Math.floor(t), Math.max(0, oldGridSize - 1));
+          const j = Math.min(Math.floor(s), Math.max(0, oldGridSize - 1));
+          const a = s - j; // fractional column position within cell
+          const b = t - i; // fractional row position within cell
+          
+          // Get deformation deltas from the four surrounding old nodes
+          const d00 = getNodeDelta(i, j);
+          const d10 = getNodeDelta(i, j + 1);
+          const d01 = getNodeDelta(i + 1, j);
+          const d11 = getNodeDelta(i + 1, j + 1);
+          
+          // Bilinear interpolation of the deformation deltas
+          const interpolatedDx = (1 - a) * (1 - b) * d00.dx
+                               + a * (1 - b) * d10.dx
+                               + (1 - a) * b * d01.dx
+                               + a * b * d11.dx;
+          const interpolatedDy = (1 - a) * (1 - b) * d00.dy
+                               + a * (1 - b) * d10.dy
+                               + (1 - a) * b * d01.dy
+                               + a * b * d11.dy;
+          
+          // Apply interpolated deformation to the new default position
+          out[row][col] = {
+            nx: newDefaultNx + interpolatedDx,
+            ny: newDefaultNy + interpolatedDy
+          };
+        }
+      }
+      return out;
+    }
+    
     // Convert normalized mesh to display coordinates
     function meshToDisplayCoords(nodes, obj) {
       if (!nodes || !obj) return null;
@@ -6274,6 +6542,20 @@
       return result;
     }
     
+    // Adjust mesh nodes to account for any visual zoom/transform changes.
+    // This converts current normalized nodes to display coords and back using
+    // current display dimensions so any rounding or transform-origin effects
+    // are reconciled after zoom changes.
+    function adjustMeshNodesForZoom(obj) {
+      if (!obj || !obj.meshNodes) return;
+      try {
+        const displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
+        if (!displayNodes) return;
+        const normalized = displayToMeshCoords(displayNodes, obj);
+        if (normalized) obj.meshNodes = normalized;
+      } catch (_e) { /* ignore */ }
+    }
+    
     // Get or create mesh nodes for an object
     function getObjectMeshNodes(obj) {
       if (!obj) return null;
@@ -6299,8 +6581,18 @@
         try { cutoutCommitSelection(); } catch (_e) {}
         
         meshWarpActiveObjectId = obj.id;
-        // Initialize mesh nodes if not already present
-        if (!obj.meshNodes) {
+        // Initialize or upgrade mesh nodes to match current grid size
+        if (obj.meshNodes) {
+          try {
+            const oldGrid = Array.isArray(obj.meshNodes) ? (obj.meshNodes.length - 1) : 0;
+            if (oldGrid !== meshWarpGridSize && oldGrid > 0) {
+              obj.meshNodes = resampleMeshNodes(obj.meshNodes, oldGrid, meshWarpGridSize, obj);
+            }
+          } catch (_e) {
+            // Fallback to fresh grid if resampling fails
+            obj.meshNodes = initMeshWarpGrid(obj);
+          }
+        } else {
           obj.meshNodes = initMeshWarpGrid(obj);
         }
         // Initialize keyframes array if not present
@@ -6334,6 +6626,8 @@
       meshWarpOverlayCanvas.style.left = '0';
       meshWarpOverlayCanvas.style.width = '100%';
       meshWarpOverlayCanvas.style.height = '100%';
+      // Prevent CSS animations during transform updates
+      meshWarpOverlayCanvas.style.transition = 'none';
       meshWarpOverlayCanvas.style.pointerEvents = 'auto';
       meshWarpOverlayCanvas.style.zIndex = '1005';
       meshWarpOverlayCanvas.style.cursor = 'crosshair';
@@ -6353,6 +6647,13 @@
       
       // Add event listeners
       meshWarpOverlayCanvas.addEventListener('mousedown', meshWarpMouseDown);
+      // Allow wheel zoom while mesh overlay is active (forward to global cutout zoom handler)
+      meshWarpOverlayCanvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (typeof cutoutHandleWheelZoom === 'function') cutoutHandleWheelZoom(e);
+        // Ensure overlays follow new zoom immediately
+        if (typeof applyCutoutZoomTransforms === 'function') applyCutoutZoomTransforms();
+      }, { passive: false });
       window.addEventListener('mousemove', meshWarpMouseMove);
       window.addEventListener('mouseup', meshWarpMouseUp);
       
@@ -6530,6 +6831,9 @@
         const normalizedNodes = displayToMeshCoords(meshWarpNodes, obj);
         obj.meshNodes = normalizedNodes;
         
+        // Reconcile any zoom/transform effects to ensure stored normalized nodes are consistent
+        if (typeof adjustMeshNodesForZoom === 'function') adjustMeshNodesForZoom(obj);
+
         // Always add/update mesh keyframe at current time when nodes are changed
         // This ensures mesh deformation is stored for animation/export
         if (!obj.keys) obj.keys = { position: [], zoom: [], rotation: [], opacity: [], mesh: [] };
@@ -7041,6 +7345,8 @@
         newImg.onload = () => {
           keep.img = newImg;
           renderCutoutPreviewForTime();
+          // Save state after async image load completes
+          try { saveState(); } catch (_e) {}
         };
         newImg.src = dataUrl;
       } catch (_e) {}
@@ -7198,6 +7504,8 @@
       posDragStartMouseX = e.clientX;
       window.addEventListener('mousemove', onPosDragMove);
       window.addEventListener('mouseup', endPosDrag, { once: true });
+      window.addEventListener('touchmove', onPosDragTouchMove, { passive: false });
+      window.addEventListener('touchend', endPosDrag, { once: true });
     }
     function onPosDragMove(e) {
       if (!cutoutSelectedObject) return;
@@ -7239,10 +7547,53 @@
         drawCutoutTimeline(); updateRowKeyActiveStates();
       }
     }
+    function onPosDragTouchMove(e) {
+      if (!cutoutSelectedObject) return;
+      if (!isDraggingPosX && !isDraggingPosY) return;
+      if (e.touches && e.touches[0]) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const delta = touch.clientX - posDragStartMouseX;
+        const prevX = cutoutSelectedObject.x;
+        const prevY = cutoutSelectedObject.y;
+        if (isDraggingPosX) { cutoutSelectedObject.x = posDragStartValue + delta; }
+        else if (isDraggingPosY) { cutoutSelectedObject.y = posDragStartValue + delta; }
+        const dx = (cutoutSelectedObject.x - prevX) || 0;
+        const dy = (cutoutSelectedObject.y - prevY) || 0;
+        // Move any bones attached to this object
+        try {
+          const activeClip = typeof getActiveCutoutClipIndex === 'function' ? getActiveCutoutClipIndex() : -1;
+          for (let i = 0; i < cutoutBones.length; i++) {
+            const b = cutoutBones[i];
+            if (!b || (activeClip >= 0 && b.clipIndex !== activeClip)) continue;
+            if (b.objectRef === cutoutSelectedObject) {
+              b.startX += dx; b.startY += dy;
+              b.endX += dx; b.endY += dy;
+              const cw = cutoutCanvas ? cutoutCanvas.width : 0;
+              const ch = cutoutCanvas ? cutoutCanvas.height : 0;
+              if (cw && ch) {
+                b.startX = Math.max(0, Math.min(cw, b.startX));
+                b.startY = Math.max(0, Math.min(ch, b.startY));
+                b.endX = Math.max(0, Math.min(cw, b.endX));
+                b.endY = Math.max(0, Math.min(ch, b.endY));
+              }
+            }
+          }
+        } catch (_e) {}
+        cutoutRenderSelectionOverlay();
+        try { scheduleCutoutPreviewForTime(); } catch (_e) {}
+        updateCutoutPositionDisplay(cutoutSelectedObject.x, cutoutSelectedObject.y);
+        if (cutoutRecorderArmed) {
+          addOrUpdatePropKeyAt('position', cutoutCurrentTime, { x: cutoutSelectedObject.x, y: cutoutSelectedObject.y });
+          drawCutoutTimeline(); updateRowKeyActiveStates();
+        }
+      }
+    }
     function endPosDrag() {
       isDraggingPosX = false;
       isDraggingPosY = false;
       window.removeEventListener('mousemove', onPosDragMove);
+      window.removeEventListener('touchmove', onPosDragTouchMove);
       // Keep selection active; do not commit automatically
     }
     
@@ -7275,6 +7626,8 @@
       zoomDragStartCenterY = cutoutSelectedObject.y + startH / 2;
       window.addEventListener('mousemove', onZoomDragMove);
       window.addEventListener('mouseup', endZoomDrag, { once: true });
+      window.addEventListener('touchmove', onZoomDragTouchMove, { passive: false });
+      window.addEventListener('touchend', endZoomDrag, { once: true });
     }
     function onZoomDragMove(e) {
       if (!cutoutSelectedObject || !isDraggingZoom) return;
@@ -7296,9 +7649,32 @@
         cutoutPendingDragKeys.zoom = { time: cutoutCurrentTime, sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY };
       }
     }
+    function onZoomDragTouchMove(e) {
+      if (!cutoutSelectedObject || !isDraggingZoom) return;
+      if (e.touches && e.touches[0]) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const delta = touch.clientX - zoomDragStartMouseX;
+        const startAvg = (zoomDragStartValueX + zoomDragStartValueY) / 2;
+        const newScale = Math.max(0.1, Math.min(10.0, startAvg + (delta * 0.01)));
+        cutoutSelectedObject.scaleX = newScale;
+        cutoutSelectedObject.scaleY = newScale;
+        const newW = zoomDragBaseW * zoomDragObjScale * newScale;
+        const newH = zoomDragBaseH * zoomDragObjScale * newScale;
+        cutoutSelectedObject.x = zoomDragStartCenterX - newW / 2;
+        cutoutSelectedObject.y = zoomDragStartCenterY - newH / 2;
+        cutoutRenderSelectionOverlay();
+        updateCutoutZoomDisplay(cutoutSelectedObject.scaleX, cutoutSelectedObject.scaleY);
+        updateCutoutPositionDisplay(cutoutSelectedObject.x, cutoutSelectedObject.y);
+        if (cutoutRecorderArmed) {
+          cutoutPendingDragKeys.zoom = { time: cutoutCurrentTime, sx: cutoutSelectedObject.scaleX, sy: cutoutSelectedObject.scaleY };
+        }
+      }
+    }
     function endZoomDrag() {
       isDraggingZoom = false;
       window.removeEventListener('mousemove', onZoomDragMove);
+      window.removeEventListener('touchmove', onZoomDragTouchMove);
       // Commit buffered zoom key once dragging ends
       if (cutoutRecorderArmed && cutoutPendingDragKeys && cutoutPendingDragKeys.zoom) {
         try { saveState(); } catch (_e) {}
@@ -8665,6 +9041,8 @@
         const polyAABB = { x: Math.floor(minX), y: Math.floor(minY), r: Math.ceil(maxX), b: Math.ceil(maxY) };
         const drawPolyPath = (g, ox = 0, oy = 0) => { g.beginPath(); g.moveTo(points[0][0] - ox, points[0][1] - oy); for (let i = 1; i < points.length; i++) g.lineTo(points[i][0] - ox, points[i][1] - oy); g.closePath(); };
         const keep = [];
+        // Track async image loading completion to save state once after all complete
+        let pendingAsyncOps = 0;
         for (let i = 0; i < objects.length; i++) {
           const obj = objects[i];
           if (!obj || !obj.img) { keep.push(obj); continue; }
@@ -8732,6 +9110,7 @@
           cctx.drawImage(off, rx, ry, cw, ch, 0, 0, cw, ch);
           const dataUrl = crop.toDataURL('image/png');
           const img = new Image();
+          pendingAsyncOps++; // Track this async operation
           img.onload = () => {
             // Preserve object's top-left by padding remainder into an aligned canvas
             const oldX = obj.x, oldY = obj.y;
@@ -8750,31 +9129,34 @@
             const offsetX = Math.max(0, Math.round((ax + rx) - oldX));
             const offsetY = Math.max(0, Math.round((ay + ry) - oldY));
             actx.drawImage(img, offsetX, offsetY);
-            // Preserve existing transform (scale/rotation) so bones stay aligned
-            const prevScale = obj.scale;
-            const prevScaleX = obj.scaleX;
-            const prevScaleY = obj.scaleY;
-            const prevRotation = obj.rotation;
+            // Swap in aligned remainder; keep x,y unchanged so the UI-reported position remains identical
             obj.img = aligned;
             obj.src = aligned.toDataURL('image/png');
             obj.x = oldX; obj.y = oldY;
-            obj.scale = prevScale;
-            obj.scaleX = prevScaleX;
-            obj.scaleY = prevScaleY;
-            obj.rotation = prevRotation;
-            // Avoid double-scaling: derive base draw size from the new raster size and current scales
-            const safeScale = (prevScale || 1) * (prevScaleX || 1);
-            const safeScaleY = (prevScale || 1) * (prevScaleY || 1);
-            obj.drawW = safeScale ? aligned.width / safeScale : aligned.width;
-            obj.drawH = safeScaleY ? aligned.height / safeScaleY : aligned.height;
+            // Bake transforms into pixels and reset to identity to prevent rotation/scale artifacts
+            obj.scale = 1; obj.scaleX = 1; obj.scaleY = 1; obj.rotation = 0;
+            obj.drawW = aligned.width; obj.drawH = aligned.height;
             obj.isImage = true;
-            // Keep existing keys; do not clear rotation/zoom so bone-linked transforms remain intact
+            // Clear zoom/rotation keys to avoid reapplying transforms (they're now baked into pixels)
+            if (obj.keys) {
+              if (Array.isArray(obj.keys.zoom)) obj.keys.zoom = [];
+              if (Array.isArray(obj.keys.rotation)) obj.keys.rotation = [];
+            }
             renderCutoutPreviewForTime && renderCutoutPreviewForTime();
+            // Decrement counter and save state when all async ops complete
+            pendingAsyncOps--;
+            if (pendingAsyncOps === 0) {
+              try { saveState(); } catch (_e) {}
+            }
           };
           img.src = dataUrl;
           keep.push(obj);
         }
         clip.objects = keep;
+        // If no async operations started, save state immediately
+        if (pendingAsyncOps === 0) {
+          try { saveState(); } catch (_e) {}
+        }
       } catch (_e) { /* ignore cutout segmentation failures */ }
     }
     
@@ -9512,6 +9894,8 @@
             // Ensure preview/UI reflect changes
             try { renderCutoutPreviewForTime && renderCutoutPreviewForTime(); } catch (_e) {}
             if (typeof renderCutoutObjectsList === 'function') renderCutoutObjectsList();
+            // Save state after async image load completes
+            try { saveState(); } catch (_e) {}
           };
           // Update ALL properties immediately to avoid any render desync
           // Update pivot FIRST to keep world pivot position stable
@@ -10193,6 +10577,12 @@
         cutoutBonesOverlayCanvas.style.transformOrigin = origin;
         cutoutBonesOverlayCanvas.style.transform = t;
       }
+      // Also keep mesh warp overlay synced with zoom transforms if present
+      if (typeof meshWarpOverlayCanvas !== 'undefined' && meshWarpOverlayCanvas) {
+        meshWarpOverlayCanvas.style.transition = 'none';
+        meshWarpOverlayCanvas.style.transformOrigin = origin;
+        meshWarpOverlayCanvas.style.transform = t;
+      }
     }
     
     // Picture Board helpers
@@ -10275,8 +10665,10 @@
       cutoutPlaceImageFromSrcAt(src, coords.x, coords.y);
     }
     function attachCutoutMobileDrag(cell, src) {
+      // Support touch drag for both phones and tablets
       cell.addEventListener('pointerdown', (e) => {
-        if (!isPhoneViewport()) return;
+        // Enable for touch devices (phones and tablets)
+        if (!shouldEnableTouchGestures()) return;
         if (!cutoutCanvas) return;
         e.preventDefault();
         const ghost = ensureCutoutBoardDragGhost();
@@ -10541,6 +10933,8 @@
       recDragStartTime = cutoutCurrentTime;
       window.addEventListener('mousemove', onRecTimeDragMove);
       window.addEventListener('mouseup', endRecTimeDrag, { once: true });
+      window.addEventListener('touchmove', onRecTimeDragTouchMove, { passive: false });
+      window.addEventListener('touchend', endRecTimeDrag, { once: true });
     }
     function onRecTimeDragMove(e) {
       if (!isDraggingRecTime) return;
@@ -10553,9 +10947,24 @@
       cutoutCurrentTime = t;
       updateCutoutScrubber();
     }
+    function onRecTimeDragTouchMove(e) {
+      if (!isDraggingRecTime) return;
+      if (e.touches && e.touches[0]) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const dx = touch.clientX - recDragStartX;
+        const secondsDelta = dx / 60;
+        const dur = Math.max(0.1, cutoutDuration);
+        let t = recDragStartTime + secondsDelta;
+        t = Math.max(0, Math.min(dur, t));
+        cutoutCurrentTime = t;
+        updateCutoutScrubber();
+      }
+    }
     function endRecTimeDrag() {
       isDraggingRecTime = false;
       window.removeEventListener('mousemove', onRecTimeDragMove);
+      window.removeEventListener('touchmove', onRecTimeDragTouchMove);
     }
     
     // Create/select a Background object from the entire base drawing canvas for the active clip.
@@ -11846,24 +12255,27 @@
         const target = cutoutClips[selectedCutoutClipIndex >= 0 ? selectedCutoutClipIndex : cutoutDrawingClipIndex];
         const tctx = target ? target.ctx : null;
         if (tctx && magicLassoPoints.length >= 3) {
-          // Snapshot before applying lasso effect so undo is per-lasso
-          try { saveState(); } catch (_e) {}
           if (currentTool === 'lasso') {
             cutoutApplyEraserLasso(tctx, magicLassoPoints);
+            // eraser lasso handles saveState internally after async ops complete
           } else if (currentTool === 'detail') {
             cutoutApplyDetailLasso(tctx, magicLassoPoints);
+            // detail is synchronous, save state immediately
+            try { saveState(); } catch (_e) {}
           } else if (currentTool === 'select-lasso') {
             // Create selection object with handles in cutout mode
             cutoutCreateSelectionFromPolygon();
+            // select-lasso handles saveState internally after async ops complete
             // Keep current tool visual state; selection will remain active
           } else if (currentTool === 'inbetween') {
             // Simple tween-esque duplicate fade within selection
             cutoutApplyInbetweenLasso(tctx, magicLassoPoints);
+            // inbetween is synchronous, save state immediately
+            try { saveState(); } catch (_e) {}
           } else if (currentTool === 'extend-lasso') {
             cutoutApplyExtendLasso(tctx, magicLassoPoints);
+            // extend-lasso handles saveState internally after async ops complete
           }
-          // Snapshot after effect for redo parity
-          try { saveState(); } catch (_e) {}
         }
         if (lassoOverlayCanvas) {
           lassoOverlayCanvas.remove();
@@ -11879,6 +12291,42 @@
     }
     
     function onCutoutKeyDown(e) {
+      // Handle mesh warp grid size adjustment with + and - keys
+      if (meshWarpActiveObjectId !== null) {
+        const isPlus = e.key === '+' || e.key === '=' || e.key === 'NumpadAdd';
+        const isMinus = e.key === '-' || e.key === '_' || e.key === 'NumpadSubtract';
+        
+        if (isPlus || isMinus) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const oldGridSize = meshWarpGridSize;
+          const minGridSize = 2;
+          const maxGridSize = 30;
+          
+          if (isPlus && meshWarpGridSize < maxGridSize) {
+            meshWarpGridSize++;
+          } else if (isMinus && meshWarpGridSize > minGridSize) {
+            meshWarpGridSize--;
+          }
+          
+          // Only update if grid size actually changed
+          if (meshWarpGridSize !== oldGridSize) {
+            const obj = getMeshWarpActiveObject();
+            if (obj) {
+              // Reset mesh nodes to their default (no deformation) so only the grid density changes.
+              // This prevents existing node deformations from causing the underlying image to scale/out-of-bounds.
+              obj.meshNodes = initMeshWarpGrid(obj);
+              // Re-render the overlay and preview
+              renderMeshWarpOverlay(obj);
+              renderCutoutPreviewForTime();
+              try { saveState(); } catch (_e) {}
+            }
+          }
+          return;
+        }
+      }
+      
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       // Bones tool: if a bone endpoint was selected, delete only the bone (not the object)
       if (isCutOutMode && currentTool === 'bones' && typeof cutoutSelectedBoneIndex === 'number' && cutoutSelectedBoneIndex >= 0) {
@@ -14917,7 +15365,8 @@
       };
       history.push(state);
       // Use smaller history limit on mobile to save memory
-      const maxHistory = shouldUseMobileTouchDrawing() ? 10 : 50;
+      // Desktop: use much larger limit (especially for cutout mode with many operations)
+      const maxHistory = shouldUseMobileTouchDrawing() ? 10 : 200;
       while (history.length > maxHistory) history.shift();
       redoStack.length = 0;
       updateHistoryButtons();
@@ -19823,8 +20272,17 @@
       const w = cutoutBonesOverlayCanvas.width, h = cutoutBonesOverlayCanvas.height;
       cutoutBonesOverlayCtx.clearRect(0, 0, w, h);
       enforceCutoutBoneConnections();
-      const jointOuter = 17;
-      const jointInner = 9;
+      // Compensate for canvas zoom (both cutout and regular frame mode) to keep bone nodes constant size in screen space
+      let currentZoom = 1;
+      if (typeof cutoutZoomLevel === 'number' && cutoutZoomLevel > 0 && isCutOutMode) {
+        currentZoom = cutoutZoomLevel;
+      } else if (typeof currentFrame === 'number' && Array.isArray(zoomLevels) && zoomLevels[currentFrame]) {
+        currentZoom = zoomLevels[currentFrame];
+      }
+      const zoomCompensation = 1 / currentZoom;
+
+      const jointOuter = 17 * zoomCompensation;
+      const jointInner = 9 * zoomCompensation;
       const activeClip = getActiveCutoutClipIndex();
       for (let bi = 0; bi < cutoutBones.length; bi++) {
         const bone = cutoutBones[bi];
@@ -19837,10 +20295,10 @@
         const uy = dy / length;
         const px = -uy;
         const py = ux;
-        const baseRadius = 12;
-        const tipRadius = 3;
+        const baseRadius = 12 * zoomCompensation;
+        const tipRadius = 3 * zoomCompensation;
         const bulgeT = 0.12;
-        const bulgeRadius = baseRadius + 2;
+        const bulgeRadius = baseRadius + (2 * zoomCompensation);
         const startLeftX = bone.startX + px * baseRadius;
         const startLeftY = bone.startY + py * baseRadius;
         const startRightX = bone.startX - px * baseRadius;
@@ -19909,7 +20367,7 @@
         drawJoint(bone.endX, bone.endY, hasParentAt('end') || hasChildAt('end'));
         
         // Draw rotation handle with dotted circle around start node
-        const rotHandleOffset = 45; // Distance from start to rotation handle
+        const rotHandleOffset = 45 * zoomCompensation; // Distance from start to rotation handle
         const boneAngle = Math.atan2(dy, dx);
         // Rotation handle perpendicular to bone direction (above the start)
         const rotHandleAngle = boneAngle - Math.PI / 2;
@@ -19918,10 +20376,10 @@
         
         // Draw dotted circle around start node (pivot indicator)
         cutoutBonesOverlayCtx.beginPath();
-        cutoutBonesOverlayCtx.arc(bone.startX, bone.startY, 28, 0, Math.PI * 2);
+        cutoutBonesOverlayCtx.arc(bone.startX, bone.startY, 28 * zoomCompensation, 0, Math.PI * 2);
         cutoutBonesOverlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        cutoutBonesOverlayCtx.lineWidth = 1.5;
-        cutoutBonesOverlayCtx.setLineDash([4, 4]);
+        cutoutBonesOverlayCtx.lineWidth = 1.5 * zoomCompensation;
+        cutoutBonesOverlayCtx.setLineDash([4 * zoomCompensation, 4 * zoomCompensation]);
         cutoutBonesOverlayCtx.stroke();
         cutoutBonesOverlayCtx.setLineDash([]);
         
@@ -19934,20 +20392,20 @@
         cutoutBonesOverlayCtx.stroke();
         
         // Draw rotation handle node
-        const rotNodeRadius = 10;
+        const rotNodeRadius = 10 * zoomCompensation;
         cutoutBonesOverlayCtx.beginPath();
         cutoutBonesOverlayCtx.arc(rotHandleX, rotHandleY, rotNodeRadius, 0, Math.PI * 2);
         cutoutBonesOverlayCtx.fillStyle = 'rgba(100, 200, 255, 0.9)';
         cutoutBonesOverlayCtx.fill();
         cutoutBonesOverlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        cutoutBonesOverlayCtx.lineWidth = 2;
+        cutoutBonesOverlayCtx.lineWidth = 2 * zoomCompensation;
         cutoutBonesOverlayCtx.stroke();
         
         // Draw rotation icon (curved arrow) inside the handle
         cutoutBonesOverlayCtx.beginPath();
-        cutoutBonesOverlayCtx.arc(rotHandleX, rotHandleY, 5, -Math.PI * 0.7, Math.PI * 0.5);
+        cutoutBonesOverlayCtx.arc(rotHandleX, rotHandleY, 5 * zoomCompensation, -Math.PI * 0.7, Math.PI * 0.5);
         cutoutBonesOverlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        cutoutBonesOverlayCtx.lineWidth = 1.5;
+        cutoutBonesOverlayCtx.lineWidth = 1.5 * zoomCompensation;
         cutoutBonesOverlayCtx.stroke();
         // Arrowhead
         const arrowAngle = Math.PI * 0.5;
@@ -20029,9 +20487,17 @@
       scheduleCutoutPreviewForTime();
     }
     function getCutoutBoneHandleAtPoint(x, y) {
-      const hitRadius = 20;
-      const rotHitRadius = 15;
-      const rotHandleOffset = 45;
+      // Compensate hit radii for zoom to match visual node sizes
+      let currentZoom = 1;
+      if (typeof cutoutZoomLevel === 'number' && cutoutZoomLevel > 0 && isCutOutMode) {
+        currentZoom = cutoutZoomLevel;
+      } else if (typeof currentFrame === 'number' && Array.isArray(zoomLevels) && zoomLevels[currentFrame]) {
+        currentZoom = zoomLevels[currentFrame];
+      }
+      const zoomCompensation = 1 / currentZoom;
+      const hitRadius = 20 * zoomCompensation;
+      const rotHitRadius = 15 * zoomCompensation;
+      const rotHandleOffset = 45 * zoomCompensation;
       const activeClip = getActiveCutoutClipIndex();
       for (let i = cutoutBones.length - 1; i >= 0; i--) {
         const b = cutoutBones[i];
@@ -20059,7 +20525,15 @@
       // - If dragging a START handle, cannot form new connections
       if (draggedHandle === 'start') return null; // Start nodes cannot initiate connections
       
-      const hitRadius = 16;
+      // Compensate hit radius for zoom so connection targets match visual nodes
+      let currentZoom = 1;
+      if (typeof cutoutZoomLevel === 'number' && cutoutZoomLevel > 0 && isCutOutMode) {
+        currentZoom = cutoutZoomLevel;
+      } else if (typeof currentFrame === 'number' && Array.isArray(zoomLevels) && zoomLevels[currentFrame]) {
+        currentZoom = zoomLevels[currentFrame];
+      }
+      const zoomCompensation = 1 / currentZoom;
+      const hitRadius = 16 * zoomCompensation;
       const activeClip = getActiveCutoutClipIndex();
       for (let i = cutoutBones.length - 1; i >= 0; i--) {
         if (i === excludeIndex) continue;
@@ -25753,6 +26227,21 @@
 
     function isPhoneViewport() {
       return cutoutPhoneMediaQuery ? cutoutPhoneMediaQuery.matches : (typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+    }
+
+    // Check if we should enable touch/tap gestures (both phone and tablet)
+    function shouldEnableTouchGestures() {
+      if (typeof window === 'undefined') return false;
+      const width = window.innerWidth;
+      // Enable for phones (≤768px) and tablets (769px-1280px)
+      return width <= 1280;
+    }
+
+    // Check if we're in tablet range specifically
+    function isTabletViewport() {
+      if (typeof window === 'undefined') return false;
+      const width = window.innerWidth;
+      return width >= 769 && width <= 1280;
     }
 
     function closeCutoutMobilePanels(skipOverlay) {
