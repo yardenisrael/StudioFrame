@@ -236,6 +236,13 @@
       overflow-x: hidden;
       max-width: 100vw;
     }
+
+    /* Avoid window-level scrollbars/sidebars popping in during active drags */
+    html.app-dragging,
+    body.app-dragging {
+      overflow: hidden !important;
+      overscroll-behavior: none;
+    }
     
     html {
       overflow-x: hidden;
@@ -745,6 +752,9 @@
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         pointer-events: none;
         z-index: 2000;
+        overflow: hidden;
+        background-size: cover;
+        background-position: center;
       }
 
       /* Improve Cut Out sliders on phones */
@@ -781,10 +791,10 @@
     /* Tablet responsive layout for Cut Out Mode (between mobile and desktop)
      * Breakpoints:
      * - Mobile (≤ 768px): Side panels in slide-out drawers
-     * - Tablet (769px - 1280px): Side panels repositioned beneath canvas
-     * - Desktop (> 1280px): Side panels positioned on left/right of canvas
+     * - Tablet (769px - 1600px): Side panels repositioned beneath canvas to prevent overlap
+     * - Desktop (> 1600px): Side panels positioned on left/right of canvas
      */
-    @media (min-width: 769px) and (max-width: 1280px) {
+    @media (min-width: 769px) and (max-width: 1680px) {
       /* Enable touch drawing on cutout canvas for tablets */
       #cutout-canvas {
         touch-action: none;
@@ -856,6 +866,8 @@
         flex-direction: column !important;
         align-items: center !important;
         padding-top: 56px !important; /* Make room for title */
+        padding-bottom: 65px !important; /* Extra space for Objects Created section */
+        min-height: calc(100vh - 400px); /* Ensure adequate height */
       }
 
       /* Canvas wrapper stays at top */
@@ -884,7 +896,7 @@
         top: auto !important;
         width: 100% !important;
         max-width: 500px !important;
-        margin-bottom: 16px;
+        margin-bottom: 32px; /* Increased spacing for objects section */
         align-items: center !important;
         z-index: 5;
       }
@@ -922,10 +934,21 @@
         justify-content: center !important;
       }
 
-      /* Ensure objects and layers panels fit properly */
+      /* Ensure objects and layers panels fit properly with adequate spacing */
       #cutout-objects-panel,
       #cutout-layers-panel {
         width: 100% !important;
+        margin-bottom: 24px !important;
+      }
+
+      /* Give objects panel extra height for content */
+      #cutout-objects-panel {
+        min-height: 200px;
+      }
+
+      /* Ensure the cutout mode container has enough bottom margin */
+      #cutout-mode-container {
+        margin-bottom: 40px !important;
       }
     }
 
@@ -3653,8 +3676,8 @@
       // Apply requested scaling: +20% in phone, +100% (2x) in desktop (as baseline)
       const scale = isPhone ? 1.2 : 2.0;
       const scaledWidth = Math.max(100, Math.round(refWidthPx * scale));
-      // Check if we're in tablet range (769px - 1280px)
-      const isTablet = (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1280);
+      // Check if we're in tablet range (769px - 1600px)
+      const isTablet = (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1600);
       // In desktop (not phone and not tablet), reserve space for the Transform Tools panel so it doesn't overlap the canvas
       if (!isPhone && !isTablet) {
         const outerPanel = document.querySelector('#cutout-mode-container .panel');
@@ -5240,8 +5263,8 @@
     // Position both panels below the "Cut Out Mode" title at same height
     function positionCutoutTransformPanel() {
       if (document.body && document.body.classList.contains('cutout-mobile-mode')) return;
-      // Skip positioning for tablet range (769px - 1280px) where panels are in flow layout
-      if (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1280) return;
+      // Skip positioning for tablet range (769px - 1600px) where panels are in flow layout
+      if (typeof window !== 'undefined' && window.innerWidth >= 769 && window.innerWidth <= 1600) return;
       const transformPanel = document.getElementById('cutout-transform-panel');
       const pictureBoard = document.getElementById('cutout-picture-board');
       // Position below "Cut Out Mode" title (which is at top:12px with ~14px height)
@@ -10640,7 +10663,7 @@
       if (!ghost) {
         ghost = document.createElement('div');
         ghost.id = 'cutout-board-drag-ghost';
-        ghost.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>';
+        // Thumbnail is applied via background-image at drag start.
         document.body.appendChild(ghost);
       }
       return ghost;
@@ -10670,21 +10693,25 @@
         // Enable for touch devices (phones and tablets)
         if (!shouldEnableTouchGestures()) return;
         if (!cutoutCanvas) return;
+        e.stopPropagation();
         e.preventDefault();
         const ghost = ensureCutoutBoardDragGhost();
+        ghost.style.backgroundImage = src ? `url("${String(src).replace(/"/g, '\\"')}")` : '';
+        setAppDragging(true);
         const updateGhost = (ev) => {
           ghost.style.display = 'flex';
           ghost.style.transform = `translate(${ev.clientX - 17}px, ${ev.clientY - 17}px)`;
         };
         const endDrag = (ev) => {
           ghost.style.display = 'none';
+          setAppDragging(false);
           window.removeEventListener('pointermove', updateGhost);
           window.removeEventListener('pointerup', endDrag);
           window.removeEventListener('pointercancel', endDrag);
           maybeDropMobileBoardImage(ev, src);
         };
         updateGhost(e);
-        window.addEventListener('pointermove', updateGhost);
+        window.addEventListener('pointermove', updateGhost, { passive: false });
         window.addEventListener('pointerup', endDrag, { once: true });
         window.addEventListener('pointercancel', endDrag, { once: true });
       });
@@ -10713,11 +10740,24 @@
       img.style.width = '100%';
       img.style.height = '100%';
       img.style.objectFit = 'cover';
+      // Prevent native image dragging (can create browser/UI side effects); we handle drag on the cell.
+      img.draggable = false;
+      img.style.pointerEvents = 'none';
+      img.style.userSelect = 'none';
+      img.style.webkitUserDrag = 'none';
       cell.appendChild(img);
       cell.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', src);
         e.dataTransfer.effectAllowed = 'copy';
+        // Ensure a consistent thumbnail preview on mouse/trackpad drag.
+        try {
+          if (e.dataTransfer && typeof e.dataTransfer.setDragImage === 'function') {
+            e.dataTransfer.setDragImage(img, 22, 22);
+          }
+        } catch (_e) {}
+        setAppDragging(true);
       });
+      cell.addEventListener('dragend', () => setAppDragging(false));
       attachCutoutMobileDrag(cell, src);
       grid.appendChild(cell);
     }
@@ -26229,19 +26269,32 @@
       return cutoutPhoneMediaQuery ? cutoutPhoneMediaQuery.matches : (typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
     }
 
+    function setAppDragging(isDragging) {
+      try {
+        document.body.classList.toggle('app-dragging', !!isDragging);
+        document.documentElement.classList.toggle('app-dragging', !!isDragging);
+      } catch (_e) {}
+    }
+
     // Check if we should enable touch/tap gestures (both phone and tablet)
     function shouldEnableTouchGestures() {
       if (typeof window === 'undefined') return false;
-      const width = window.innerWidth;
-      // Enable for phones (≤768px) and tablets (769px-1280px)
-      return width <= 1280;
+      // Only enable the pointer-based "touch drag" UX on touch / coarse-pointer devices.
+      // Using viewport width alone (tablet breakpoint) causes conflicts on desktop browsers resized to tablet width.
+      const nav = window.navigator || {};
+      const hasTouchPoints = typeof nav.maxTouchPoints === 'number' ? nav.maxTouchPoints > 0 : false;
+      const coarsePointer = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(pointer: coarse)').matches
+        : false;
+      const touchEvent = ('ontouchstart' in window);
+      return !!(hasTouchPoints || coarsePointer || touchEvent);
     }
 
     // Check if we're in tablet range specifically
     function isTabletViewport() {
       if (typeof window === 'undefined') return false;
       const width = window.innerWidth;
-      return width >= 769 && width <= 1280;
+      return width >= 769 && width <= 1600;
     }
 
     function closeCutoutMobilePanels(skipOverlay) {
@@ -26337,6 +26390,7 @@
       event.stopPropagation();
       
       isDraggingRib = true;
+      setAppDragging(true);
       dragFrameIndex = frameIndex;
       dragSide = side;
       dragStartX = event.clientX;
@@ -26382,6 +26436,7 @@
       if (!isDraggingRib) return;
       
       isDraggingRib = false;
+      setAppDragging(false);
       
       // Remove visual feedback
       const rib = document.getElementById(`rib-${dragSide}-${dragFrameIndex}`);
