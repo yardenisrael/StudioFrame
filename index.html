@@ -3583,7 +3583,7 @@
     let meshWarpActiveObjectId = null; // ID of object currently being mesh-warped
     let meshWarpOverlayCanvas = null;
     let meshWarpOverlayCtx = null;
-    let meshWarpGridSize = 10; // 10x10 grid of control points (increased density)
+    let meshWarpGridSize = 30; // Internal mesh resolution (41x41 control points) for fine-grained free-form deformation
     let meshWarpDraggingNode = null; // { row, col, offsetX, offsetY }
     let meshWarpNodes = null; // Current working copy of mesh nodes being dragged
     // Cutout drawing state and timeline clips
@@ -4576,7 +4576,7 @@
       if (cutoutBonesOverlayCanvas) {
         cutoutBonesOverlayCanvas.style.display = 'none';
       }
-      // Hide mesh warp overlay during playback - grid should only be visible during editing
+      // Hide mesh warp overlay during playback - editing overlay should only be visible when editing
       if (typeof meshWarpOverlayCanvas !== 'undefined' && meshWarpOverlayCanvas) {
         meshWarpOverlayCanvas.style.display = 'none';
       }
@@ -6374,10 +6374,10 @@
         label.style.fontSize = '12px';
         label.style.color = '#e5e7eb';
         label.style.flex = '1';
-        // Mesh warp grid button
+        // Mesh warp button
         const meshBtn = document.createElement('button');
         meshBtn.className = 'mesh-warp-btn';
-        meshBtn.title = 'Mesh Warp Grid';
+        meshBtn.title = 'Mesh Warp (Free-form Stretch)';
         meshBtn.style.width = '22px';
         meshBtn.style.height = '22px';
         meshBtn.style.padding = '0';
@@ -6447,7 +6447,8 @@
       };
     }
     
-    // Initialize default mesh grid for an object (normalized 0-1 coordinates)
+    // Initialize default mesh structure for an object (normalized 0-1 coordinates)
+    // Uses an internal grid of control points for smooth free-form deformation
     function initMeshWarpGrid(obj) {
       const gridSize = meshWarpGridSize;
       const nodes = [];
@@ -6720,16 +6721,20 @@
       return cutoutCanvasCoords(e);
     }
     
-    // Find if mouse is over a mesh node (returns {row, col} or null)
+    // Find the closest mesh node to a point (returns {row, col} for the nearest node)
+    // In the new free-form mode, we find the closest node to where the user clicks
     function findMeshNodeAtPoint(obj, canvasX, canvasY) {
       if (!obj || !obj.meshNodes) return null;
       
       const displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
       if (!displayNodes) return null;
       
-      const nodeRadius = 12; // Larger hit area for easier selection
       const objX = obj.x || 0;
       const objY = obj.y || 0;
+      
+      // Find the closest node to the click point
+      let closestNode = null;
+      let minDist = Infinity;
       
       for (let row = 0; row <= meshWarpGridSize; row++) {
         for (let col = 0; col <= meshWarpGridSize; col++) {
@@ -6737,12 +6742,14 @@
           const nx = objX + node.x;
           const ny = objY + node.y;
           const dist = Math.hypot(canvasX - nx, canvasY - ny);
-          if (dist <= nodeRadius) {
-            return { row, col };
+          if (dist < minDist) {
+            minDist = dist;
+            closestNode = { row, col };
           }
         }
       }
-      return null;
+      
+      return closestNode;
     }
     
     // Mouse down on mesh overlay
@@ -6754,6 +6761,8 @@
       if (!obj) return;
       
       const coords = meshWarpCanvasCoords(e);
+      
+      // Always find the closest node to where the user clicks
       const nodeHit = findMeshNodeAtPoint(obj, coords.x, coords.y);
       
       if (nodeHit) {
@@ -6763,15 +6772,15 @@
         const displayNodes = meshToDisplayCoords(obj.meshNodes, obj);
         const objX = obj.x || 0;
         const objY = obj.y || 0;
-        const hitNode = displayNodes[nodeHit.row][nodeHit.col];
         
-        // Start dragging this node
+        // In free-form mode, we start dragging from the click point, not from the node position
+        // This gives a more natural feel - the point under your cursor moves with your cursor
         meshWarpDraggingNode = {
           row: nodeHit.row,
           col: nodeHit.col,
-          // Store offset from mouse to node center for smooth dragging
-          offsetX: (objX + hitNode.x) - coords.x,
-          offsetY: (objY + hitNode.y) - coords.y
+          // No offset - we want the node to move directly to where the cursor is
+          offsetX: 0,
+          offsetY: 0
         };
         
         // Create working copy of display nodes for live editing
@@ -6789,11 +6798,9 @@
       const obj = getMeshWarpActiveObject();
       if (!obj) return;
       
-      // Update cursor based on hover
+      // In free-form mode, always show crosshair when not dragging
       if (!meshWarpDraggingNode && meshWarpOverlayCanvas) {
-        const coords = meshWarpCanvasCoords(e);
-        const nodeHit = findMeshNodeAtPoint(obj, coords.x, coords.y);
-        meshWarpOverlayCanvas.style.cursor = nodeHit ? 'grab' : 'crosshair';
+        meshWarpOverlayCanvas.style.cursor = 'crosshair';
       }
       
       if (!meshWarpDraggingNode || !meshWarpNodes) return;
@@ -6875,7 +6882,7 @@
         try { saveState(); } catch (_e) {}
       }
       
-      // Reset cursor
+      // Reset cursor to crosshair for free-form mode
       if (meshWarpOverlayCanvas) {
         meshWarpOverlayCanvas.style.cursor = 'crosshair';
       }
@@ -6971,7 +6978,7 @@
       return interpolateMeshNodes(prev.nodes, next.nodes, t);
     }
     
-    // Render mesh warp overlay (grid lines and control nodes)
+    // Render mesh warp overlay (free-form mode - no grid, only active point)
     function renderMeshWarpOverlay(obj) {
       if (!meshWarpOverlayCtx || !meshWarpOverlayCanvas || !obj) return;
       
@@ -6992,8 +6999,8 @@
       const objX = obj.x || 0;
       const objY = obj.y || 0;
       
-      // Draw semi-transparent overlay on object area
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+      // Draw very subtle overlay on object area to indicate mesh mode is active
+      ctx.fillStyle = 'rgba(99, 102, 241, 0.04)';
       ctx.beginPath();
       ctx.moveTo(objX + displayNodes[0][0].x, objY + displayNodes[0][0].y);
       for (let col = 1; col <= meshWarpGridSize; col++) {
@@ -7011,69 +7018,65 @@
       ctx.closePath();
       ctx.fill();
       
-      // Draw grid lines with anti-aliasing
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.7)';
-      ctx.lineWidth = 1.5;
+      // Draw a subtle border around the object
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)';
+      ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.stroke();
       
-      // Horizontal lines
-      for (let row = 0; row <= meshWarpGridSize; row++) {
+      // Only draw the active dragging point if one is being dragged
+      if (meshWarpDraggingNode) {
+        const row = meshWarpDraggingNode.row;
+        const col = meshWarpDraggingNode.col;
+        const node = displayNodes[row][col];
+        const nx = objX + node.x;
+        const ny = objY + node.y;
+        
+        // Draw glow for active point
         ctx.beginPath();
-        ctx.moveTo(objX + displayNodes[row][0].x, objY + displayNodes[row][0].y);
-        for (let col = 1; col <= meshWarpGridSize; col++) {
-          ctx.lineTo(objX + displayNodes[row][col].x, objY + displayNodes[row][col].y);
-        }
-        ctx.stroke();
-      }
-      
-      // Vertical lines
-      for (let col = 0; col <= meshWarpGridSize; col++) {
+        ctx.arc(nx, ny, 14, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
+        ctx.fill();
+        
+        // Draw outer ring
         ctx.beginPath();
-        ctx.moveTo(objX + displayNodes[0][col].x, objY + displayNodes[0][col].y);
-        for (let row = 1; row <= meshWarpGridSize; row++) {
-          ctx.lineTo(objX + displayNodes[row][col].x, objY + displayNodes[row][col].y);
-        }
+        ctx.arc(nx, ny, 10, 0, Math.PI * 2);
+        ctx.fillStyle = '#6366f1';
+        ctx.fill();
+        
+        // Draw inner white dot
+        ctx.beginPath();
+        ctx.arc(nx, ny, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        
+        // Draw crosshair lines extending from the point
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        
+        // Horizontal crosshair
+        ctx.beginPath();
+        ctx.moveTo(nx - 20, ny);
+        ctx.lineTo(nx - 12, ny);
         ctx.stroke();
-      }
-      
-      // Draw control nodes
-      for (let row = 0; row <= meshWarpGridSize; row++) {
-        for (let col = 0; col <= meshWarpGridSize; col++) {
-          const node = displayNodes[row][col];
-          const nx = objX + node.x;
-          const ny = objY + node.y;
-          
-          // Highlight dragging node
-          const isDragging = meshWarpDraggingNode && 
-            meshWarpDraggingNode.row === row && 
-            meshWarpDraggingNode.col === col;
-          
-          // Corner nodes larger, edge nodes medium, internal nodes smaller
-          const isCorner = (row === 0 || row === meshWarpGridSize) && 
-                          (col === 0 || col === meshWarpGridSize);
-          const isEdge = (row === 0 || row === meshWarpGridSize || 
-                         col === 0 || col === meshWarpGridSize);
-          
-          const radius = isDragging ? 10 : (isCorner ? 7 : (isEdge ? 6 : 5));
-          
-          // Draw glow for dragging node
-          if (isDragging) {
-            ctx.beginPath();
-            ctx.arc(nx, ny, radius + 4, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
-            ctx.fill();
-          }
-          
-          // Draw node circle
-          ctx.beginPath();
-          ctx.arc(nx, ny, radius, 0, Math.PI * 2);
-          ctx.fillStyle = isDragging ? '#fff' : (isCorner ? '#6366f1' : '#818cf8');
-          ctx.fill();
-          ctx.strokeStyle = isDragging ? '#6366f1' : '#312e81';
-          ctx.lineWidth = isDragging ? 2.5 : 1.5;
-          ctx.stroke();
-        }
+        ctx.beginPath();
+        ctx.moveTo(nx + 12, ny);
+        ctx.lineTo(nx + 20, ny);
+        ctx.stroke();
+        
+        // Vertical crosshair
+        ctx.beginPath();
+        ctx.moveTo(nx, ny - 20);
+        ctx.lineTo(nx, ny - 12);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(nx, ny + 12);
+        ctx.lineTo(nx, ny + 20);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
       }
     }
     
@@ -12342,7 +12345,7 @@
           
           const oldGridSize = meshWarpGridSize;
           const minGridSize = 2;
-          const maxGridSize = 30;
+          const maxGridSize = 80; // Increased for fine-grained control in free-form mode
           
           if (isPlus && meshWarpGridSize < maxGridSize) {
             meshWarpGridSize++;
